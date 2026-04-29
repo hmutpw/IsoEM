@@ -1,0 +1,29 @@
+Package: IsoEM
+Type: Package
+Title: EM-Based Transcript Quantification for Long-Read RNA-seq
+Version: 0.3.0
+Authors@R: person("hmutpw", role = c("aut", "cre"),
+    email = "hmutpw@github.com")
+Description: Post-processing package for IsoQuant long-read RNA-seq output.
+    Provides a modular pipeline: prepare_isoem() validates input files and
+    creates a lightweight IsoEMInput object; build_ec() / build_sc_ec()
+    construct equivalence classes from bulk or single-cell data; run_em()
+    performs EC-compressed EM quantification; write_isoem() / write_sc_isoem()
+    write results to disk. One-step wrappers run_isoem() and run_sc_isoem()
+    are also provided. Designed for large files with memory-efficient
+    chunk processing and shell-level sort+join.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.1.0)
+Imports: data.table (>= 1.14.0), Matrix (>= 1.5.0), methods, parallel,
+        stats, utils, tools
+Suggests: testthat (>= 3.0.0), knitr, rmarkdown
+VignetteBuilder: knitr
+RoxygenNote: 7.3.1
+Config/testthat/edition: 3
+URL: https://github.com/hmutpw/IsoEM
+BugReports: https://github.com/hmutpw/IsoEM/issues
+NeedsCompilation: no
+Packaged: 2026-04-29 19:26:26 UTC; root
+Author: hmutpw [aut, cre]
+Maintainer: hmutpw <hmutpw@github.com>

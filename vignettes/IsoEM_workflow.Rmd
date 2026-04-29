@@ -1,0 +1,426 @@
+---
+title: "IsoEM: EM-Based Transcript Quantification for Long-Read RNA-seq"
+author: "hmutpw"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{IsoEM: Complete Workflow Guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+## Overview
+
+**IsoEM** provides equivalence-class (EC) compressed EM quantification for
+[IsoQuant](https://github.com/ablab/isoquant) long-read RNA-seq output.
+It supports three analysis modes:
+
+| Mode | Use case | Key input |
+|------|----------|-----------|
+| `bulk_single` | One sample, one BAM | `counts_file` + `sample_id` |
+| `bulk_multi` | Joint IsoQuant run, multiple samples | `counts_file` + `anno_file` (read→sample) |
+| `sc` | Single-cell / spatial (10x, Visium HD) | `counts_file` + `anno_file` (read→barcode+UMI) |
+
+### Modular pipeline
+
+```
+prepare_isoem()  →  IsoEMInput     (validate paths, no data loaded)
+       ↓
+build_ec()       →  IsoEMEC        (bulk: build ECs)
+build_sc_ec()    →  IsoEMEC        (SC:   build ECs with UMI dedup)
+       ↓
+run_em()         →  IsoEMResult / IsoEMDataset / IsoEMSCResult
+       ↓
+write_isoem()    /  write_sc_isoem()   (write results to disk)
+```
+
+One-step wrappers `run_isoem()` and `run_sc_isoem()` chain all steps
+automatically for convenience.
+
+---
+
+## Installation
+
+```r
+# From GitHub
+devtools::install_github("hmutpw/IsoEM")
+
+# From local tarball
+install.packages("IsoEM_0.3.0.tar.gz", repos = NULL, type = "source")
+```
+
+---
+
+## Toy data
+
+All examples use built-in toy datasets:
+
+```{r toy_data}
+library(IsoEM)
+
+# Core input files
+counts_f <- system.file("extdata", "toy_counts.tsv",       package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf",              package = "IsoEM")
+
+# Single-cell annotation: read_id | barcode | umi
+bc_f     <- system.file("extdata", "toy_bc_umi.tsv",       package = "IsoEM")
+
+# Multi-sample: joint counts + read-to-sample mapping
+multi_f  <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
+sid_f    <- system.file("extdata", "toy_sample_ids.tsv",   package = "IsoEM")
+
+# Regex mode: read_id has embedded bc/umi (_bc=BARCODE_sq=UMI)
+regex_f  <- system.file("extdata", "toy_counts_regex.tsv", package = "IsoEM")
+```
+
+Preview the files:
+
+```{r preview}
+# Counts file: read_id | transcript_id
+head(read.table(counts_f, sep = "\t", header = FALSE,
+                col.names = c("read_id", "transcript_id")), 4)
+
+# SC annotation: read_id | barcode | umi
+head(read.table(bc_f, sep = "\t", header = FALSE,
+                col.names = c("read_id", "barcode", "umi")), 4)
+
+# Regex counts: read_id encodes barcode + UMI
+head(read.table(regex_f, sep = "\t", header = FALSE,
+                col.names = c("read_id", "transcript_id")), 3)
+```
+
+---
+
+## Workflow 1: Bulk single-sample
+
+### One-step
+
+```{r bulk_single_onestep}
+result <- run_isoem(
+  counts_file = counts_f,
+  gtf_file    = gtf_f,
+  mode        = "bulk_single",
+  sample_id   = "toy_sample",
+  outdir      = file.path(tempdir(), "isoem_bulk"),
+  verbose     = FALSE
+)
+print(result)
+```
+
+### Step-by-step (modular)
+
+```{r bulk_single_modular}
+# Step 1: validate inputs — returns lightweight IsoEMInput object
+input <- prepare_isoem(
+  counts_file = counts_f,
+  gtf_file    = gtf_f,
+  mode        = "bulk_single",
+  sample_id   = "toy_sample",
+  outdir      = file.path(tempdir(), "isoem_bulk2"),
+  verbose     = FALSE
+)
+print(input)
+
+# Step 2: build equivalence classes
+ec <- build_ec(input, verbose = FALSE)
+print(ec)
+
+# Step 3: run EM
+result <- run_em(ec, gtf_file = gtf_f, verbose = FALSE)
+print(result)
+
+# Inspect counts table
+head(result$counts[, .(transcript_id, gene_id, em_count, tpm, certainty)])
+```
+
+### Write results
+
+```{r bulk_single_write, eval=FALSE}
+write_isoem(result, outdir = "results/toy_sample/")
+# Output:
+#   results/toy_sample/counts.tsv   — transcript-level EM counts
+#   results/toy_sample/qc.tsv       — run QC summary
+```
+
+---
+
+## Workflow 2: Bulk multi-sample (joint IsoQuant run)
+
+```{r bulk_multi}
+# Step 1: prepare — anno_file maps read_id → sample_id
+input_multi <- prepare_isoem(
+  counts_file = multi_f,
+  gtf_file    = gtf_f,
+  mode        = "bulk_multi",
+  anno_file   = sid_f,       # read_id | sample_id
+  outdir      = file.path(tempdir(), "isoem_multi"),
+  verbose     = FALSE
+)
+print(input_multi)
+
+# Step 2 + 3: EC + EM
+ec_multi     <- build_ec(input_multi, verbose = FALSE)
+result_multi <- run_em(ec_multi, gtf_file = gtf_f, verbose = FALSE)
+print(result_multi)
+
+# Access per-sample results
+head(result_multi$count_matrix[1:5, ])
+```
+
+---
+
+## Workflow 3: Single-cell (anno_file mode)
+
+The standard SC workflow uses a pre-prepared `read_id | barcode | umi`
+file (e.g. extracted from a minimap2 BAM using the bundled shell script).
+
+### One-step
+
+```{r sc_onestep}
+result_sc <- run_sc_isoem(
+  counts_file = counts_f,
+  gtf_file    = gtf_f,
+  anno_file   = bc_f,
+  unit        = "umi",       # UMI-level quantification (recommended)
+  outdir      = file.path(tempdir(), "isoem_sc"),
+  verbose     = FALSE
+)
+print(result_sc)
+```
+
+### Step-by-step
+
+```{r sc_modular}
+# Step 1: validate
+input_sc <- prepare_isoem(
+  counts_file  = counts_f,
+  gtf_file     = gtf_f,
+  mode         = "sc",
+  anno_file    = bc_f,
+  unit         = "umi",
+  outdir       = file.path(tempdir(), "isoem_sc2"),
+  verbose      = FALSE
+)
+print(input_sc)
+
+# Step 2: build SC ECs (with UMI dedup)
+ec_sc <- build_sc_ec(input_sc, verbose = FALSE)
+print(ec_sc)
+
+# Step 3: run EM
+result_sc <- run_em(ec_sc, gtf_file = gtf_f, verbose = FALSE)
+print(result_sc)
+
+# Inspect cell QC
+head(result_sc$cell_qc)
+```
+
+### With barcode whitelist
+
+```{r sc_whitelist}
+# Filter to known valid cell barcodes
+valid_barcodes <- paste0("CELL0", 1:5)   # keep only cells 1-5
+
+input_wl <- prepare_isoem(
+  counts_file  = counts_f,
+  gtf_file     = gtf_f,
+  mode         = "sc",
+  anno_file    = bc_f,
+  barcodes_use = valid_barcodes,
+  unit         = "umi",
+  outdir       = file.path(tempdir(), "isoem_sc_wl"),
+  verbose      = FALSE
+)
+
+ec_wl     <- build_sc_ec(input_wl, verbose = FALSE)
+result_wl <- run_em(ec_wl, gtf_file = gtf_f, verbose = FALSE)
+cat("Cells after whitelist filter:", ncol(result_wl$count_matrix), "\n")
+```
+
+### Write SC results
+
+```{r sc_write, eval=FALSE}
+write_sc_isoem(result_sc, outdir = "results/sc_sample/")
+# Output:
+#   results/sc_sample/matrix/matrix.mtx    — sparse count matrix
+#   results/sc_sample/matrix/features.tsv  — transcript annotations
+#   results/sc_sample/matrix/barcodes.tsv  — cell barcodes
+#   results/sc_sample/cell_qc.tsv          — per-cell QC
+```
+
+### Load into Seurat
+
+```{r seurat, eval=FALSE}
+library(Seurat)
+# write_sc_isoem output is directly compatible with Read10X
+seu <- Read10X("results/sc_sample/matrix/")
+seu <- CreateSeuratObject(seu, project = "sc_sample")
+```
+
+---
+
+## Workflow 4: Single-cell (regex extraction mode)
+
+When barcode and UMI are embedded in the read ID (e.g. from BLAZE or
+custom demultiplexing), use the `pattern` argument to extract them via
+named capture groups without a separate annotation file.
+
+```{r sc_regex}
+# toy_counts_regex.tsv has read IDs like:
+# READ_00001_bc=CELL03_sq=AGATCTAC
+head(read.table(regex_f, sep = "\t", header = FALSE)[, 1], 3)
+
+# Named capture groups: (?P<name>pattern)
+input_regex <- prepare_isoem(
+  counts_file = regex_f,
+  gtf_file    = gtf_f,
+  mode        = "sc",
+  pattern     = ".*_bc=(?P<barcode>[A-Z0-9]+)_sq=(?P<umi>[ACGT]+)",
+  unit        = "umi",
+  outdir      = file.path(tempdir(), "isoem_regex"),
+  verbose     = FALSE
+)
+
+ec_regex     <- build_sc_ec(input_regex, verbose = FALSE)
+result_regex <- run_em(ec_regex, gtf_file = gtf_f, verbose = FALSE)
+print(result_regex)
+```
+
+Alternatively, specify barcode and UMI patterns separately:
+
+```{r sc_regex_sep, eval=FALSE}
+input_sep <- prepare_isoem(
+  counts_file = regex_f,
+  gtf_file    = gtf_f,
+  mode        = "sc",
+  bc_pattern  = "_bc=([A-Z0-9]+)",    # first capture group = barcode
+  umi_pattern = "_sq=([ACGT]+)",      # first capture group = UMI
+  unit        = "umi",
+  outdir      = file.path(tempdir(), "isoem_regex2"),
+  verbose     = FALSE
+)
+```
+
+---
+
+## EC object: save and reuse
+
+The `IsoEMEC` object can be saved and reused to re-run EM with different
+parameters without re-processing the large input files:
+
+```{r ec_reuse}
+# Build EC once
+ec <- build_sc_ec(
+  prepare_isoem(counts_f, gtf_f, mode = "sc", anno_file = bc_f,
+                unit = "umi", outdir = tempdir(), verbose = FALSE),
+  verbose = FALSE
+)
+
+# Save EC object
+ec_path <- file.path(tempdir(), "sc_ec.rds")
+saveRDS(ec, ec_path)
+
+# Later: load and re-run EM with different parameters
+ec_loaded <- readRDS(ec_path)
+result_tight <- run_em(ec_loaded, gtf_file = gtf_f,
+                       max_iter = 1000, tol = 1e-8, verbose = FALSE)
+print(result_tight)
+```
+
+---
+
+## Extracting barcode/UMI from BAM
+
+For users starting from a minimap2-aligned BAM, IsoEM provides a shell
+script to extract `read_id | barcode | umi`:
+
+```bash
+# Default tags: BC:Z (barcode), U8:Z (UMI)
+bash $(Rscript -e "cat(system.file('scripts',
+  'extract_barcodes_from_bam.sh', package='IsoEM'))") \
+    -i aligned.bam \
+    -o read_bc_umi.tsv.gz \
+    -t 8
+
+# Custom tags (e.g. STARsolo / CellRanger output)
+bash extract_barcodes_from_bam.sh \
+    -i aligned.bam -o out.tsv.gz \
+    -b CB:Z -u UB:Z
+```
+
+The output is a 3-column TSV used as `anno_file` in `prepare_isoem()`.
+
+---
+
+## Output format reference
+
+### Bulk counts table (`counts.tsv`)
+
+| Column | Description |
+|--------|-------------|
+| `transcript_id` | Transcript identifier |
+| `sample_id` | Sample name |
+| `em_count` | EM-estimated read count |
+| `tpm` | Transcripts Per Million |
+| `unique_count` | Reads uniquely assigned to this transcript |
+| `total_count` | All reads compatible with this transcript |
+| `certainty` | `unique_count / total_count` — quantification confidence (0–1) |
+| `multimapping_rate` | `1 − certainty` |
+| `gene_id` | Gene identifier (from GTF) |
+| `is_novel` | Novel IsoQuant transcript |
+
+### SC sparse matrix
+
+Output follows the 10x Genomics / STARsolo Matrix Market convention:
+
+```
+outdir/
+├── matrix/
+│   ├── matrix.mtx[.gz]       # sparse (transcript × cell), EM counts
+│   ├── features.tsv[.gz]     # transcript_id, gene_id, is_novel
+│   └── barcodes.tsv[.gz]     # one barcode per line
+└── cell_qc.tsv[.gz]          # per-cell QC metrics
+```
+
+### Cell QC table (`cell_qc.tsv`)
+
+| Column | Description |
+|--------|-------------|
+| `barcode` | Cell barcode |
+| `n_transcripts_detected` | Transcripts with EM count > 0.01 |
+| `em_converged` | Whether EM converged |
+| `em_n_iter` | Actual EM iterations |
+| `n_ec` | Number of ECs for this cell |
+| `n_unique_ec` | ECs with only one compatible transcript |
+
+---
+
+## Note on transposable elements
+
+IsoEM was designed with TE-derived transcript quantification in mind.
+Highly repetitive loci (e.g. L1 LINE elements) typically show
+`certainty < 0.1` because a single read may be compatible with hundreds of
+nearly identical copies. This is **expected behaviour**, not an error — the
+EM algorithm distributes counts probabilistically across all compatible
+copies. For downstream differential expression, filtering by `certainty`
+threshold can help focus on high-confidence assignments.
+
+---
+
+## Session info
+
+```{r session}
+sessionInfo()
+```
