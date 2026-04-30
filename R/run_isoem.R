@@ -63,7 +63,6 @@ run_isoem <- function(
 
   run_em(
     ec       = ec,
-    gtf_file = gtf_file,
     max_iter = max_iter,
     tol      = tol,
     n_cores  = n_cores,
@@ -138,7 +137,6 @@ run_sc_isoem <- function(
 
   run_em(
     ec       = ec,
-    gtf_file = gtf_file,
     max_iter = max_iter,
     tol      = tol,
     n_cores  = n_cores,

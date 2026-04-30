@@ -89,7 +89,7 @@ summary.IsoEMInput <- function(object, ...) print(object, ...)
 #' @keywords internal
 #' @noRd
 new_isoem_ec <- function(ec_table, tx_map, group_ids, n_tx,
-                          mode, unit, input_params) {
+                          mode, unit, gtf_file, input_params) {
   structure(
     list(
       ec_table     = ec_table,    # data.table: group_id|ec_id|t_indices|count
@@ -98,6 +98,7 @@ new_isoem_ec <- function(ec_table, tx_map, group_ids, n_tx,
       n_tx         = n_tx,        # total transcript count
       mode         = mode,        # "bulk" / "sc"
       unit         = unit,        # "read" / "umi"
+      gtf_file     = gtf_file,    # path to GTF for annotation in run_em()
       input_params = input_params # snapshot of key params for reproducibility
     ),
     class = "IsoEMEC"
@@ -112,6 +113,7 @@ print.IsoEMEC <- function(x, ...) {
   cat("IsoEMEC\n")
   cat(sprintf("  Mode          : %s\n", x$mode))
   cat(sprintf("  Unit          : %s\n", x$unit))
+  cat(sprintf("  GTF           : %s\n", basename(x$gtf_file %||% "not set")))
   cat(sprintf("  Groups        : %d\n", length(x$group_ids)))
   cat(sprintf("  Transcripts   : %d\n", x$n_tx))
   cat(sprintf("  Total ECs     : %d\n", nrow(x$ec_table)))

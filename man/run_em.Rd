@@ -6,7 +6,7 @@
 \usage{
 run_em(
   ec,
-  gtf_file,
+  gtf_file = NULL,
   max_iter = NULL,
   tol = 1e-06,
   n_cores = 1L,
@@ -17,15 +17,19 @@ run_em(
 \item{ec}{An \code{IsoEMEC} object from \code{\link{build_ec}} or
 \code{\link{build_sc_ec}}.}
 
-\item{gtf_file}{Character. Path to IsoQuant \code{transcript_models.gtf[.gz]}.
-Used to annotate transcripts with gene_id and is_novel.}
+\item{gtf_file}{Character or NULL. Path to IsoQuant
+\code{transcript_models.gtf[.gz]} for transcript annotation.
+If NULL (default), the path stored in \code{ec$gtf_file} is used
+automatically (set by \code{\link{prepare_isoem}}).
+Only needed if the EC object was built without \code{prepare_isoem()}.}
 
 \item{max_iter}{Integer. Maximum EM iterations per group (default: 1000
 for bulk, 500 for sc).}
 
 \item{tol}{Numeric. Convergence tolerance (default 1e-6).}
 
-\item{n_cores}{Integer. Parallel workers (default 1).}
+\item{n_cores}{Integer. Parallel workers (default 1).
+Uses \code{parallel::makeCluster} — compatible with Windows and Linux.}
 
 \item{verbose}{Logical (default TRUE).}
 }
@@ -48,15 +52,15 @@ gtf_f    <- system.file("extdata", "toy.gtf",         package = "IsoEM")
 input  <- prepare_isoem(counts_f, gtf_f,
   mode = "bulk_single", sample_id = "toy")
 ec     <- build_ec(input)
-result <- run_em(ec, gtf_file = gtf_f)
+result <- run_em(ec)
 print(result)
 
 # single-cell
-bc_f     <- system.file("extdata", "toy_bc_umi.tsv", package = "IsoEM")
-input_sc <- prepare_isoem(counts_f, gtf_f,
+bc_f      <- system.file("extdata", "toy_bc_umi.tsv", package = "IsoEM")
+input_sc  <- prepare_isoem(counts_f, gtf_f,
   mode = "sc", anno_file = bc_f, unit = "umi")
-ec_sc    <- build_sc_ec(input_sc)
-result_sc <- run_em(ec_sc, gtf_file = gtf_f)
+ec_sc     <- build_sc_ec(input_sc)
+result_sc <- run_em(ec_sc)
 print(result_sc)
 }
 \seealso{

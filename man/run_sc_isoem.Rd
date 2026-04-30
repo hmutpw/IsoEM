@@ -65,7 +65,8 @@ for bulk, 500 for sc).}
 
 \item{tol}{Numeric. Convergence tolerance (default 1e-6).}
 
-\item{n_cores}{Integer. Parallel workers (default 1).}
+\item{n_cores}{Integer. Parallel workers (default 1).
+Uses \code{parallel::makeCluster} — compatible with Windows and Linux.}
 
 \item{verbose}{Logical (default TRUE).}
 }

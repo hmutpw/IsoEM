@@ -1,0 +1,39 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+### 1. testfiles
+
+#### 1.1 validate inputs — returns lightweight IsoEMInput object
+
+
+```{r}
+library(IsoEM)
+counts_f <- "../../../01.test_data/mm39_brain/SAMEA117622252/OUT_mm39_SAMEA117622252.transcript_model_reads.tsv.gz"
+gtf_f    <- "../../../01.test_data/mm39_brain/SAMEA117622252/OUT_mm39_SAMEA117622252.transcript_models.gtf"
+
+input <- prepare_isoem(
+  counts_file = counts_f,
+  gtf_file    = gtf_f,
+  mode        = "bulk_single",
+  sample_id   = "SAMEA117622252",
+  outdir      = "output"
+)
+print(input)
+
+
+# Step 2: build equivalence classes
+ec <- build_ec(input, n_cores = 1, verbose = FALSE)
+print(ec)
+
+# Step 3: run EM
+result <- run_em(ec, n_cores = 6, verbose = FALSE)
+print(result)
+
+# Inspect counts table
+head(result$counts[, .(transcript_id, gene_id, em_count, tpm, certainty)])
+
+
+```
+
