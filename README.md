@@ -263,31 +263,31 @@ outdir/
 
 **`counts.tsv` columns:**
 
-| Column | Description |
-|--------|-------------|
-| `transcript_id` | Transcript identifier |
-| `sample_id` | Sample name |
-| `em_count` | EM-estimated read count |
-| `tpm` | Transcripts Per Million |
-| `unique_count` | Uniquely assigned reads |
-| `total_count` | All compatible reads |
-| `certainty` | `unique / total` — quantification confidence (0–1) |
-| `multimapping_rate` | `1 − certainty` |
-| `gene_id` | Gene (from GTF) |
-| `is_novel` | Novel IsoQuant transcript |
+| Column              | Description                                        |
+| ------------------- | -------------------------------------------------- |
+| `transcript_id`     | Transcript identifier                              |
+| `sample_id`         | Sample name                                        |
+| `em_count`          | EM-estimated read count                            |
+| `tpm`               | Transcripts Per Million                            |
+| `unique_count`      | Uniquely assigned reads                            |
+| `total_count`       | All compatible reads                               |
+| `certainty`         | `unique / total` — quantification confidence (0–1) |
+| `multimapping_rate` | `1 − certainty`                                    |
+| `gene_id`           | Gene (from GTF)                                    |
+| `is_novel`          | Novel IsoQuant transcript                          |
 
 **`qc.tsv` columns:**
 
-| Column | Description |
-|--------|-------------|
-| `sample_id` | Sample name |
-| `total_reads` | Total reads assigned to any EC |
-| `unique_assignment_rate` | Fraction of reads in unique ECs |
+| Column                   | Description                      |
+| ------------------------ | -------------------------------- |
+| `sample_id`              | Sample name                      |
+| `total_reads`            | Total reads assigned to any EC   |
+| `unique_assignment_rate` | Fraction of reads in unique ECs  |
 | `n_transcripts_detected` | Transcripts with EM count > 0.01 |
-| `n_unique_ecs` | Single-transcript ECs |
-| `n_multi_ecs` | Multi-transcript ECs |
-| `n_iter` | EM iterations used |
-| `converged` | Whether EM converged |
+| `n_unique_ecs`           | Single-transcript ECs            |
+| `n_multi_ecs`            | Multi-transcript ECs             |
+| `n_iter`                 | EM iterations used               |
+| `converged`              | Whether EM converged             |
 
 ---
 
@@ -306,14 +306,17 @@ outdir/
 
 **`cell_qc.tsv` columns:**
 
-| Column | Description |
-|--------|-------------|
-| `barcode` | Cell barcode |
-| `n_transcripts_detected` | Transcripts with EM count > 0.01 |
-| `em_converged` | Whether EM converged for this cell |
-| `em_n_iter` | Actual iterations used |
-| `n_ec` | Number of ECs for this cell |
-| `n_unique_ec` | Single-transcript ECs |
+| Column                   | Description                                               |
+| ------------------------ | --------------------------------------------------------- |
+| `barcode`                | Cell barcode                                              |
+| `n_transcripts_detected` | Transcripts with EM count > 0.01                          |
+| `em_converged`           | Whether EM converged for this cell                        |
+| `em_n_iter`              | Actual iterations used                                    |
+| `n_ec`                   | Number of ECs for this cell                               |
+| `n_unique_ec`            | Single-transcript ECs (ec_size == 1)                      |
+| `total_reads`            | Total UMIs assigned to this cell                          |
+| `unique_reads`           | UMIs from unique-mapping ECs                              |
+| `unique_read_frac`       | `unique_reads / total_reads` — mapping specificity (0--1) |
 
 ---
 
@@ -324,14 +327,14 @@ both bulk and SC modes.
 
 **Bulk columns:**
 
-| Column | Description |
-|--------|-------------|
-| `sample_id` | Sample name |
-| `ec_id` | Integer EC identifier (unique within sample) |
+| Column        | Description                                            |
+| ------------- | ------------------------------------------------------ |
+| `sample_id`   | Sample name                                            |
+| `ec_id`       | Integer EC identifier (unique within sample)           |
 | `transcripts` | Pipe-separated transcript names (e.g. `TX1\|TX2\|TX3`) |
-| `count` | Number of reads/UMIs in this EC |
-| `ec_size` | Number of compatible transcripts |
-| `ec_type` | `unique` (ec_size = 1) or `multi` (ec_size > 1) |
+| `count`       | Number of reads/UMIs in this EC                        |
+| `ec_size`     | Number of compatible transcripts                       |
+| `ec_type`     | `unique` (ec_size = 1) or `multi` (ec_size > 1)        |
 
 **SC columns:** same, with `group_id` (barcode) instead of `sample_id`.
 
@@ -348,22 +351,23 @@ multi-mapping ECs. Useful for assessing quantification reliability, especially
 at repetitive TE loci.
 
 **Sharing fraction** is defined as:
+
 ```
 sharing_fraction = shared_reads / min(total_reads_tx1, total_reads_tx2)
 ```
 
 **Columns:**
 
-| Column | Description |
-|--------|-------------|
-| `sample_id` / `group_id` | Sample name or cell barcode |
-| `transcript_1` | First transcript |
-| `transcript_2` | Second transcript |
-| `shared_reads` | Reads in ECs containing both transcripts |
-| `total_reads_tx1` | Total reads compatible with transcript 1 |
-| `total_reads_tx2` | Total reads compatible with transcript 2 |
-| `sharing_fraction` | `shared / min(total_tx1, total_tx2)` |
-| `recommendation` | `consider_merging` (≥0.9) or `ambiguous_quantification` |
+| Column                   | Description                                             |
+| ------------------------ | ------------------------------------------------------- |
+| `sample_id` / `group_id` | Sample name or cell barcode                             |
+| `transcript_1`           | First transcript                                        |
+| `transcript_2`           | Second transcript                                       |
+| `shared_reads`           | Reads in ECs containing both transcripts                |
+| `total_reads_tx1`        | Total reads compatible with transcript 1                |
+| `total_reads_tx2`        | Total reads compatible with transcript 2                |
+| `sharing_fraction`       | `shared / min(total_tx1, total_tx2)`                    |
+| `recommendation`         | `consider_merging` (≥0.9) or `ambiguous_quantification` |
 
 **Control parameters** in `write_isoem()` / `write_sc_isoem()`:
 
@@ -544,14 +548,14 @@ IsoEM was designed with **transposable element transcript quantification** in mi
 
 IsoEM handles very large files through several strategies:
 
-| Strategy | Detail |
-|----------|--------|
-| Lazy loading | `prepare_isoem()` validates paths without reading data |
-| Integer mapping | Reads and transcripts integerised before EC construction |
+| Strategy         | Detail                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| Lazy loading     | `prepare_isoem()` validates paths without reading data                                  |
+| Integer mapping  | Reads and transcripts integerised before EC construction                                |
 | Chunk processing | `anno_file` / `counts_file` read in configurable chunks (`chunk_size`, default 5M rows) |
-| Early filtering | `anno_file` records not in `counts_file` discarded immediately |
-| EC compression | EM operates on the EC table (small), not raw reads (large) |
-| Temp cleanup | Intermediate files deleted after EC construction by default (`keep_temp = FALSE`) |
+| Early filtering  | `anno_file` records not in `counts_file` discarded immediately                          |
+| EC compression   | EM operates on the EC table (small), not raw reads (large)                              |
+| Temp cleanup     | Intermediate files deleted after EC construction by default (`keep_temp = FALSE`)       |
 
 **Typical memory usage** for a spatial transcriptomics sample
 (45M reads, 120M barcode records): **~4 GB peak** with default settings.
@@ -568,6 +572,7 @@ ec <- build_sc_ec(input, chunk_size = 1e6L, n_cores = 16)
 ## Changelog
 
 ### v0.3.1
+
 - **New:** `ec_table.tsv` output — all equivalence classes with transcript
   membership, count, size, and type (`unique`/`multi`)
 - **New:** `sharing_table.tsv` output — pairwise transcript sharing analysis
@@ -579,6 +584,7 @@ ec <- build_sc_ec(input, chunk_size = 1e6L, n_cores = 16)
 - Fully backward-compatible — existing code produces identical output by default
 
 ### v0.3.0
+
 - Initial public release
 
 ---

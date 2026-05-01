@@ -87,15 +87,32 @@
   results <- list()
   idx     <- 1L
 
+  malformed_total <- 0L
   repeat {
     # Read chunk as text lines, then parse with fread(text=)
     lines <- readLines(con, n = as.integer(chunk_size), warn = FALSE)
     if (length(lines) == 0L) break
     n_chunk <- length(lines)
 
+    # Pre-filter malformed lines BEFORE fread to avoid early-stop data loss.
+    # fread silently truncates on field-count mismatch (only warns), so we
+    # validate field count up front and drop bad lines explicitly.
+    expected_cols <- if (!is.null(select)) max(select) else NULL
+    if (!is.null(expected_cols)) {
+      tab_counts <- lengths(regmatches(lines, gregexpr("\t", lines, fixed = TRUE)))
+      good_mask  <- (tab_counts + 1L) >= expected_cols
+      n_bad      <- sum(!good_mask)
+      if (n_bad > 0L) {
+        malformed_total <- malformed_total + n_bad
+        lines <- lines[good_mask]
+      }
+      if (length(lines) == 0L) next
+    }
+
     args <- list(
       text         = paste(lines, collapse = "\n"),
       header       = FALSE,
+      fill         = TRUE,    # tolerate trailing-field variations
       showProgress = FALSE,
       data.table   = TRUE
     )
@@ -103,8 +120,20 @@
     if (!is.null(col.names))  args$col.names  <- col.names
     if (!is.null(colClasses)) args$colClasses <- colClasses
 
-    chunk <- tryCatch(do.call(data.table::fread, args),
-                      error = function(e) NULL)
+    # Capture both errors and warnings so a single bad line does not
+    # silently truncate an entire chunk (data.table::fread default).
+    chunk <- tryCatch(
+      withCallingHandlers(
+        do.call(data.table::fread, args),
+        warning = function(w) {
+          if (grepl("Stopped early|Expected.*fields", conditionMessage(w))) {
+            malformed_total <<- malformed_total + 1L
+          }
+          invokeRestart("muffleWarning")
+        }
+      ),
+      error = function(e) NULL
+    )
     rm(lines)
 
     if (!is.null(chunk) && nrow(chunk) > 0L) {
@@ -118,6 +147,14 @@
 
     if (n_chunk < chunk_size) break
   }
+
+  if (malformed_total > 0L)
+    warning(sprintf(
+      paste0("%d malformed line(s) skipped while reading %s. ",
+             "Check the file for inconsistent field counts ",
+             "(extra/missing tabs)."),
+      malformed_total, basename(path)
+    ), call. = FALSE)
 
   if (length(results) == 0L) return(data.table::data.table())
   data.table::rbindlist(results, use.names = TRUE, fill = TRUE)

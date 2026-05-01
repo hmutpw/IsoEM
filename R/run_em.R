@@ -212,19 +212,44 @@ run_em <- function(ec,
   x_list <- vector("list", n_cells)
   qc_list <- vector("list", n_cells)
 
+  # Pre-compute per-cell read stats from ec_table (once, vectorised)
+  # total_reads  = sum of all UMI counts in that cell
+  # unique_reads = UMI counts from unique-mapping ECs (ec_size == 1)
+  if (!is.null(ec_table) && nrow(ec_table) > 0L) {
+    ec_read_stats <- ec_table[, .(
+      total_reads  = sum(count),
+      unique_reads = sum(count[lengths(t_indices) == 1L])
+    ), by = group_id]
+  } else {
+    ec_read_stats <- data.table::data.table(
+      group_id     = character(),
+      total_reads  = integer(),
+      unique_reads = integer()
+    )
+  }
+
   for (j in seq_len(n_cells)) {
     grp <- group_ids[j]
     res <- em_results[[grp]]
     nz  <- which(res$counts > threshold)
     i_list[[j]] <- nz
     x_list[[j]] <- res$counts[nz]
+    # read stats for this cell (0 if not found)
+    rs_row <- ec_read_stats[group_id == grp]
+    total_r  <- if (nrow(rs_row) > 0L) rs_row$total_reads[1L]  else 0L
+    unique_r <- if (nrow(rs_row) > 0L) rs_row$unique_reads[1L] else 0L
     qc_list[[j]] <- list(
       barcode                = grp,
       n_transcripts_detected = length(nz),
       em_converged           = res$converged,
       em_n_iter              = res$n_iter,
       n_ec                   = res$n_ec,
-      n_unique_ec            = res$n_unique_ec
+      n_unique_ec            = res$n_unique_ec,
+      total_reads            = total_r,
+      unique_reads           = unique_r,
+      unique_read_frac       = if (total_r > 0L)
+                                 round(unique_r / total_r, 4L)
+                               else NA_real_
     )
   }
 

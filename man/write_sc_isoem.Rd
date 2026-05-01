@@ -67,6 +67,19 @@ convention and can be loaded directly with \code{Seurat::Read10X()}.
 The \code{ec_table.tsv} for single-cell data contains one row per
 barcode-EC combination; the \code{sharing_table.tsv} aggregates counts
 across all cells before computing sharing fractions.
+
+\code{cell_qc.tsv} columns:
+\itemize{
+  \item \code{barcode}                -- cell barcode
+  \item \code{n_transcripts_detected} -- transcripts with EM count > 0.01
+  \item \code{em_converged}           -- whether EM converged
+  \item \code{em_n_iter}              -- EM iterations used
+  \item \code{n_ec}                  -- total equivalence classes
+  \item \code{n_unique_ec}            -- single-transcript ECs
+  \item \code{total_reads}            -- total UMIs in this cell
+  \item \code{unique_reads}           -- UMIs from unique-mapping ECs
+  \item \code{unique_read_frac}       -- unique_reads / total_reads
+}
 }
 \examples{
 counts_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")

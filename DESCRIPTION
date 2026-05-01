@@ -1,7 +1,7 @@
 Package: IsoEM
 Type: Package
 Title: EM-Based Transcript Quantification for Long-Read RNA-seq
-Version: 0.3.2
+Version: 0.3.4
 Authors@R: person("hmutpw", role = c("aut", "cre"),
     email = "hmutpw@github.com")
 Description: Post-processing package for IsoQuant long-read RNA-seq output.
@@ -24,6 +24,6 @@ Config/testthat/edition: 3
 URL: https://github.com/hmutpw/IsoEM
 BugReports: https://github.com/hmutpw/IsoEM/issues
 NeedsCompilation: no
-Packaged: 2026-04-30 23:52:42 UTC; root
+Packaged: 2026-05-01 15:14:24 UTC; root
 Author: hmutpw [aut, cre]
 Maintainer: hmutpw <hmutpw@github.com>

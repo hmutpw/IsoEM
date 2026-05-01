@@ -13,17 +13,12 @@ library(IsoEM)
 counts_f <- "../../../01.test_data/mm39_brain/SAMEA117622252/OUT_mm39_SAMEA117622252.transcript_model_reads.tsv.gz"
 gtf_f    <- "../../../01.test_data/mm39_brain/SAMEA117622252/OUT_mm39_SAMEA117622252.transcript_models.gtf"
 
-counts_f <- system.file("extdata", "toy_counts.tsv.gz",       package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf.gz",              package = "IsoEM")
-
-
 result <- run_isoem(
   counts_file = counts_f,
   gtf_file    = gtf_f,
   mode        = "bulk_single",
   sample_id   = "SAMEA117622252",
   outdir      = "IsoEM_out")
-
 
 
 
