@@ -4,16 +4,47 @@
 \alias{write_isoem}
 \title{Write bulk IsoEM results to disk}
 \usage{
-write_isoem(result, outdir, compress = FALSE, verbose = TRUE)
+write_isoem(
+  result,
+  outdir,
+  compress = FALSE,
+  write_ec_table = TRUE,
+  write_sharing_table = TRUE,
+  min_sharing = 0.5,
+  max_ec_size_sharing = 50L,
+  verbose = TRUE
+)
 }
 \arguments{
 \item{result}{An \code{IsoEMResult} or \code{IsoEMDataset}.}
 
 \item{outdir}{Character. Output directory (created if absent).}
 
-\item{compress}{Logical. Write \code{.gz} files (default FALSE).}
+\item{compress}{Logical. Write \code{.gz} compressed files (default FALSE).}
 
-\item{verbose}{Logical (default TRUE).}
+\item{write_ec_table}{Logical. Write \code{ec_table.tsv} if EC data is
+available in the result object (default TRUE). The EC table contains one
+row per equivalence class with columns \code{sample_id}, \code{ec_id},
+\code{transcripts} (pipe-separated), \code{count}, \code{ec_size},
+\code{ec_type} (\code{"unique"} or \code{"multi"}).}
+
+\item{write_sharing_table}{Logical. Write \code{sharing_table.tsv} if EC
+data is available (default TRUE). The sharing table identifies transcript
+pairs that share a large fraction of reads through multi-mapping ECs.
+See \code{min_sharing} and \code{max_ec_size_sharing}.}
+
+\item{min_sharing}{Numeric in [0, 1]. Only transcript pairs with
+\code{sharing_fraction >= min_sharing} are reported in the sharing table
+(default 0.5). \code{sharing_fraction} is defined as
+\code{shared_reads / min(total_reads_tx1, total_reads_tx2)}.
+Lower values produce larger output files.}
+
+\item{max_ec_size_sharing}{Integer. ECs with more than this many transcripts
+are excluded from pairwise sharing computation (default 50). This prevents
+combinatorial explosion at highly repetitive TE loci (e.g. L1 LINE
+families with 500+ near-identical copies).}
+
+\item{verbose}{Logical. Print progress messages (default TRUE).}
 }
 \value{
 Invisibly returns \code{outdir}.
@@ -23,16 +54,35 @@ Writes all output files for an \code{IsoEMResult} (single sample) or
 \code{IsoEMDataset} (multi-sample) object.
 }
 \details{
-Output files:
+Output files (all optional outputs require EC data to be present,
+i.e. the result must have been produced by \code{\link{run_em}} on an
+\code{IsoEMEC} object from \code{\link{build_ec}}):
 \itemize{
-  \item \code{counts.tsv[.gz]} — EM-estimated transcript counts
-  \item \code{qc.tsv[.gz]}     — QC summary metrics
+  \item \code{counts.tsv[.gz]}        -- EM-estimated transcript counts
+  \item \code{qc.tsv[.gz]}            -- QC summary metrics
+  \item \code{ec_table.tsv[.gz]}      -- Equivalence class table (if EC data present)
+  \item \code{sharing_table.tsv[.gz]} -- Transcript sharing pairs (if EC data present)
 }
+
+For \code{IsoEMDataset} (multi-sample), per-sample subdirectories are
+created alongside a combined \code{count_matrix.tsv}.
 }
 \examples{
-counts_f <- system.file("extdata", "toy_counts.tsv", package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf",        package = "IsoEM")
-result   <- run_isoem(counts_f, gtf_f, sample_id = "toy")
-tmp      <- tempdir()
+counts_f <- system.file("extdata", "toy_counts.tsv.gz", package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",        package = "IsoEM")
+result   <- run_isoem(counts_f, gtf_f,
+  mode = "bulk_single", sample_id = "toy")
+tmp <- tempdir()
 write_isoem(result, outdir = tmp)
+
+# Write with all outputs, compressed
+write_isoem(result, outdir = tmp, compress = TRUE,
+            write_ec_table      = TRUE,
+            write_sharing_table = TRUE,
+            min_sharing         = 0.5,
+            max_ec_size_sharing = 50L)
+}
+\seealso{
+\code{\link{run_isoem}}, \code{\link{run_em}},
+  \code{\link{write_sc_isoem}}
 }

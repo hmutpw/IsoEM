@@ -23,26 +23,39 @@ construction (default FALSE).}
 (default 5e6).}
 
 \item{n_cores}{Integer. Parallel workers for EC construction across
-samples (default 1). Uses \code{parallel::makeCluster} —
+samples (default 1). Uses \code{parallel::makeCluster} --
 compatible with Windows and Linux.}
 
 \item{verbose}{Logical (default TRUE).}
 }
 \value{
-An \code{IsoEMEC} object.
+An \code{IsoEMEC} object containing:
+\itemize{
+  \item \code{ec_table}  -- data.table with columns \code{group_id} (sample),
+    \code{ec_id}, \code{t_indices} (list of integer transcript indices),
+    \code{count}
+  \item \code{tx_map}    -- character vector mapping integer index to transcript ID
+  \item \code{group_ids} -- all sample IDs
+  \item \code{n_tx}      -- number of transcripts in the universe
+}
+The \code{ec_table} is carried through \code{\link{run_em}} into the
+\code{IsoEMResult} and written to \code{ec_table.tsv} by
+\code{\link{write_isoem}}.
 }
 \description{
 Reads IsoQuant counts, merges group (sample) information, and constructs
 an \code{IsoEMEC} object ready for \code{\link{run_em}}.
 }
 \examples{
-counts_f <- system.file("extdata", "toy_counts.tsv",  package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf",         package = "IsoEM")
+counts_f <- system.file("extdata", "toy_counts.tsv.gz",  package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",         package = "IsoEM")
 input    <- prepare_isoem(counts_f, gtf_f,
   mode = "bulk_single", sample_id = "toy")
 ec <- build_ec(input)
 print(ec)
+# saveRDS(ec, "ec.rds")  # save for parameter tuning
 }
 \seealso{
-\code{\link{prepare_isoem}}, \code{\link{run_em}}
+\code{\link{prepare_isoem}}, \code{\link{run_em}},
+  \code{\link{write_isoem}}
 }

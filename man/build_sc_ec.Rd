@@ -21,12 +21,23 @@ with \code{mode = "sc"}.}
 \item{chunk_size}{Integer. Rows per chunk (default 5e6).}
 
 \item{n_cores}{Integer. Parallel workers (default 1).
-Uses \code{parallel::makeCluster} — compatible with Windows and Linux.}
+Uses \code{parallel::makeCluster} -- compatible with Windows and Linux.}
 
 \item{verbose}{Logical (default TRUE).}
 }
 \value{
-An \code{IsoEMEC} object with \code{mode = "sc"}.
+An \code{IsoEMEC} object with \code{mode = "sc"} containing:
+\itemize{
+  \item \code{ec_table}  -- data.table with columns \code{group_id} (barcode),
+    \code{ec_id}, \code{t_indices} (list of integer transcript indices),
+    \code{count}
+  \item \code{tx_map}    -- character vector mapping integer index to transcript ID
+  \item \code{group_ids} -- all cell barcodes
+  \item \code{n_tx}      -- number of transcripts in the universe
+}
+The \code{ec_table} is carried through \code{\link{run_em}} into the
+\code{IsoEMSCResult} and written to \code{ec_table.tsv} by
+\code{\link{write_sc_isoem}}.
 }
 \description{
 Reads IsoQuant counts, merges barcode/UMI information, applies optional
@@ -34,14 +45,17 @@ barcode whitelist filtering, and constructs an \code{IsoEMEC} object
 ready for \code{\link{run_em}}.
 }
 \examples{
-counts_f <- system.file("extdata", "toy_counts.tsv",  package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf",         package = "IsoEM")
-bc_f     <- system.file("extdata", "toy_bc_umi.tsv",  package = "IsoEM")
+counts_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",            package = "IsoEM")
+bc_f     <- system.file("extdata", "toy_bc_umi.tsv",        package = "IsoEM")
 input    <- prepare_isoem(counts_f, gtf_f,
   mode = "sc", anno_file = bc_f, unit = "umi")
 ec <- build_sc_ec(input)
 print(ec)
+# Save for reuse (avoid rebuilding on large datasets)
+# saveRDS(ec, "ec.rds")
 }
 \seealso{
-\code{\link{prepare_isoem}}, \code{\link{run_em}}
+\code{\link{prepare_isoem}}, \code{\link{run_em}},
+  \code{\link{write_sc_isoem}}
 }

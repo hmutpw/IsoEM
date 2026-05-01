@@ -17,69 +17,110 @@ run_isoem(
   max_iter = 1000L,
   tol = 1e-06,
   n_cores = 1L,
-  verbose = TRUE
+  verbose = TRUE,
+  write = TRUE,
+  compress = FALSE,
+  write_ec_table = TRUE,
+  write_sharing_table = TRUE,
+  min_sharing = 0.5,
+  max_ec_size_sharing = 50L
 )
 }
 \arguments{
 \item{counts_file}{Character. Path to IsoQuant
-\code{transcript_model_reads.tsv[.gz]}. Two columns, no header:
-\code{read_id | transcript_id}.}
+\code{transcript_model_reads.tsv[.gz]}.
+Each row: \code{read_id [TAB] transcript_id}.}
 
-\item{gtf_file}{Character. Path to IsoQuant
-\code{transcript_models.gtf[.gz]}.}
+\item{gtf_file}{Character. Path to IsoQuant \code{transcript_models.gtf[.gz]}.
+Used for gene annotation in the output.}
 
-\item{mode}{Character. One of \code{"bulk_single"}, \code{"bulk_multi"},
-or \code{"sc"}.}
+\item{mode}{Character. One of \code{"bulk_single"} (one sample per run)
+or \code{"bulk_multi"} (multiple samples, requires \code{anno_file}).}
 
-\item{anno_file}{Character or NULL. Path to annotation file.
-\itemize{
-  \item \code{bulk_multi}: \code{read_id | sample_id} (2 cols)
-  \item \code{sc}: \code{read_id | barcode | umi} (3 cols)
-}
-Cannot be set together with \code{sample_id} or \code{pattern}.}
+\item{anno_file}{Character or NULL. For \code{"bulk_multi"}: path to a
+two-column TSV (\code{read_id | sample_id}), no header. For
+\code{"bulk_single"} with \code{sample_id = NULL}: path to a file
+whose first column is \code{read_id} (sample extracted via \code{pattern}).}
 
-\item{sample_id}{Character or NULL. For \code{bulk_single} only.
-Fixed sample ID assigned to all reads. Cannot be set with
-\code{anno_file} or \code{pattern}.}
+\item{sample_id}{Character or NULL. Sample name for \code{"bulk_single"} mode.
+If NULL, \code{pattern} must be supplied to extract it from read IDs.}
 
-\item{pattern}{Character or NULL. Single regex with named capture groups
-to extract group info from read_id. Example:
-\code{".*_bc=(?P<barcode>[ACGT]+).*_sq=(?P<umi>[ACGT]+)"}.
-Cannot be set with \code{anno_file} or \code{sample_id}.}
+\item{pattern}{Character or NULL. A PCRE regex with a named capture group
+\code{(?P<sample_id>...)} to extract sample IDs from read names.
+Only used when \code{anno_file} is NULL.}
 
-\item{outdir}{Character. Output directory. A \code{temp/} subdirectory
-will be created here for intermediate files. Default: \code{"IsoEM_out"}.}
+\item{outdir}{Character. Output directory. A \code{temp/} subdirectory is
+used for intermediate files and cleaned up unless \code{keep_temp = TRUE}.
+Default: \code{"IsoEM_out"}.}
 
 \item{keep_temp}{Logical. Keep the \code{temp/} directory after EC
 construction (default FALSE).}
 
-\item{chunk_size}{Integer. Rows per chunk when reading large files
-(default 5e6).}
+\item{chunk_size}{Integer. Rows per chunk when reading large annotation or
+counts files (default 5e6). Reduce to lower peak memory.}
 
-\item{max_iter}{Integer. Maximum EM iterations per group (default: 1000
-for bulk, 500 for sc).}
+\item{max_iter}{Integer. Maximum EM iterations (default 1000).}
 
-\item{tol}{Numeric. Convergence tolerance (default 1e-6).}
+\item{tol}{Numeric. EM convergence tolerance (default 1e-6). EM stops when
+the L1 change in the count vector normalised by total counts is below
+this threshold.}
 
-\item{n_cores}{Integer. Parallel workers for EC construction across
-samples (default 1). Uses \code{parallel::makeCluster} —
-compatible with Windows and Linux.}
+\item{n_cores}{Integer. Parallel workers for EC construction and EM
+(default 1). Uses \code{parallel::makeCluster} internally.}
 
-\item{verbose}{Logical (default TRUE).}
+\item{verbose}{Logical. Print progress messages (default TRUE).}
+
+\item{write}{Logical. Automatically write results to \code{outdir}
+after EM completes (default TRUE). Calls \code{\link{write_isoem}}
+with the parameters below. Set to FALSE to return the result object
+without writing, e.g. for interactive inspection before saving.}
+
+\item{compress}{Logical. Write \code{.gz} compressed output files
+(default FALSE). Passed to \code{\link{write_isoem}}.}
+
+\item{write_ec_table}{Logical. Write \code{ec_table.tsv} (default TRUE).
+Passed to \code{\link{write_isoem}}.}
+
+\item{write_sharing_table}{Logical. Write \code{sharing_table.tsv}
+(default TRUE). Passed to \code{\link{write_isoem}}.}
+
+\item{min_sharing}{Numeric. Minimum sharing fraction for sharing table
+(default 0.5). Passed to \code{\link{write_isoem}}.}
+
+\item{max_ec_size_sharing}{Integer. Max EC size for pairwise expansion
+(default 50). Passed to \code{\link{write_isoem}}.}
 }
 \value{
-An \code{IsoEMResult} (single sample) or
-  \code{IsoEMDataset} (multi-sample).
+An \code{IsoEMResult} (single-sample) or \code{IsoEMDataset}
+  (multi-sample), invisibly if \code{write = TRUE}.
 }
 \description{
 Convenience wrapper that calls \code{\link{prepare_isoem}},
 \code{\link{build_ec}}, and \code{\link{run_em}} in sequence.
+For a modular workflow that allows saving the intermediate \code{IsoEMEC}
+object, call those functions separately.
 }
 \examples{
-counts_f <- system.file("extdata", "toy_counts.tsv", package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf",        package = "IsoEM")
-result   <- run_isoem(counts_f, gtf_f,
-  mode = "bulk_single", sample_id = "toy_sample")
+counts_f <- system.file("extdata", "toy_counts.tsv.gz", package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",        package = "IsoEM")
+
+# Single sample — write automatically
+result <- run_isoem(counts_f, gtf_f,
+  mode = "bulk_single", sample_id = "toy_sample",
+  outdir = tempdir())
+
+# Inspect before writing
+result <- run_isoem(counts_f, gtf_f,
+  mode = "bulk_single", sample_id = "toy_sample",
+  write = FALSE)
+print(result)
+write_isoem(result, outdir = tempdir())
+
+# Multi-sample
+multi_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
+sid_f   <- system.file("extdata", "toy_sample_ids.tsv",   package = "IsoEM")
+result  <- run_isoem(multi_f, gtf_f,
+  mode = "bulk_multi", anno_file = sid_f, outdir = tempdir())
 print(result)
 }
 \seealso{

@@ -1,9 +1,9 @@
 # =============================================================================
-# build_ec.R  —  EC construction for bulk and single-cell modes
+# build_ec.R  --  EC construction for bulk and single-cell modes
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# build_ec()  —  Bulk
+# build_ec()  --  Bulk
 # -----------------------------------------------------------------------------
 
 #' Build equivalence classes for bulk RNA-seq quantification
@@ -18,21 +18,35 @@
 #' @param chunk_size Integer. Rows per chunk when reading large files
 #'   (default 5e6).
 #' @param n_cores Integer. Parallel workers for EC construction across
-#'   samples (default 1). Uses \code{parallel::makeCluster} —
+#'   samples (default 1). Uses \code{parallel::makeCluster} --
 #'   compatible with Windows and Linux.
 #' @param verbose Logical (default TRUE).
 #'
-#' @return An \code{IsoEMEC} object.
-#' @seealso \code{\link{prepare_isoem}}, \code{\link{run_em}}
+#' @return An \code{IsoEMEC} object containing:
+#' \itemize{
+#'   \item \code{ec_table}  -- data.table with columns \code{group_id} (sample),
+#'     \code{ec_id}, \code{t_indices} (list of integer transcript indices),
+#'     \code{count}
+#'   \item \code{tx_map}    -- character vector mapping integer index to transcript ID
+#'   \item \code{group_ids} -- all sample IDs
+#'   \item \code{n_tx}      -- number of transcripts in the universe
+#' }
+#' The \code{ec_table} is carried through \code{\link{run_em}} into the
+#' \code{IsoEMResult} and written to \code{ec_table.tsv} by
+#' \code{\link{write_isoem}}.
+#'
+#' @seealso \code{\link{prepare_isoem}}, \code{\link{run_em}},
+#'   \code{\link{write_isoem}}
 #' @export
 #'
 #' @examples
-#' counts_f <- system.file("extdata", "toy_counts.tsv",  package = "IsoEM")
-#' gtf_f    <- system.file("extdata", "toy.gtf",         package = "IsoEM")
+#' counts_f <- system.file("extdata", "toy_counts.tsv.gz",  package = "IsoEM")
+#' gtf_f    <- system.file("extdata", "toy.gtf.gz",         package = "IsoEM")
 #' input    <- prepare_isoem(counts_f, gtf_f,
 #'   mode = "bulk_single", sample_id = "toy")
 #' ec <- build_ec(input)
 #' print(ec)
+#' # saveRDS(ec, "ec.rds")  # save for parameter tuning
 build_ec <- function(input,
                      keep_temp  = FALSE,
                      chunk_size = 5e6L,
@@ -80,7 +94,7 @@ build_ec <- function(input,
 
 
 # -----------------------------------------------------------------------------
-# build_sc_ec()  —  Single-cell
+# build_sc_ec()  --  Single-cell
 # -----------------------------------------------------------------------------
 
 #' Build equivalence classes for single-cell RNA-seq quantification
@@ -94,21 +108,36 @@ build_ec <- function(input,
 #' @param keep_temp Logical. Keep \code{temp/} directory (default FALSE).
 #' @param chunk_size Integer. Rows per chunk (default 5e6).
 #' @param n_cores Integer. Parallel workers (default 1).
-#'   Uses \code{parallel::makeCluster} — compatible with Windows and Linux.
+#'   Uses \code{parallel::makeCluster} -- compatible with Windows and Linux.
 #' @param verbose Logical (default TRUE).
 #'
-#' @return An \code{IsoEMEC} object with \code{mode = "sc"}.
-#' @seealso \code{\link{prepare_isoem}}, \code{\link{run_em}}
+#' @return An \code{IsoEMEC} object with \code{mode = "sc"} containing:
+#' \itemize{
+#'   \item \code{ec_table}  -- data.table with columns \code{group_id} (barcode),
+#'     \code{ec_id}, \code{t_indices} (list of integer transcript indices),
+#'     \code{count}
+#'   \item \code{tx_map}    -- character vector mapping integer index to transcript ID
+#'   \item \code{group_ids} -- all cell barcodes
+#'   \item \code{n_tx}      -- number of transcripts in the universe
+#' }
+#' The \code{ec_table} is carried through \code{\link{run_em}} into the
+#' \code{IsoEMSCResult} and written to \code{ec_table.tsv} by
+#' \code{\link{write_sc_isoem}}.
+#'
+#' @seealso \code{\link{prepare_isoem}}, \code{\link{run_em}},
+#'   \code{\link{write_sc_isoem}}
 #' @export
 #'
 #' @examples
-#' counts_f <- system.file("extdata", "toy_counts.tsv",  package = "IsoEM")
-#' gtf_f    <- system.file("extdata", "toy.gtf",         package = "IsoEM")
-#' bc_f     <- system.file("extdata", "toy_bc_umi.tsv",  package = "IsoEM")
+#' counts_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
+#' gtf_f    <- system.file("extdata", "toy.gtf.gz",            package = "IsoEM")
+#' bc_f     <- system.file("extdata", "toy_bc_umi.tsv",        package = "IsoEM")
 #' input    <- prepare_isoem(counts_f, gtf_f,
 #'   mode = "sc", anno_file = bc_f, unit = "umi")
 #' ec <- build_sc_ec(input)
 #' print(ec)
+#' # Save for reuse (avoid rebuilding on large datasets)
+#' # saveRDS(ec, "ec.rds")
 build_sc_ec <- function(input,
                          keep_temp  = FALSE,
                          chunk_size = 5e6L,
@@ -159,7 +188,7 @@ build_sc_ec <- function(input,
       message(sprintf("  Whitelist: %d / %d barcodes retained.",
                       n_after, n_before))
   } else {
-    if (verbose) message("[3/4] No whitelist — using all barcodes.")
+    if (verbose) message("[3/4] No whitelist -- using all barcodes.")
   }
 
   if (verbose) message("[4/4] Building equivalence classes ...")
@@ -240,7 +269,7 @@ build_sc_ec <- function(input,
   )
 }
 
-#' Prepare group table for bulk_single (trivial: all reads → same sample_id)
+#' Prepare group table for bulk_single (trivial: all reads -> same sample_id)
 #' @keywords internal
 #' @noRd
 .group_from_single <- function(dt_counts, sample_id) {
@@ -265,7 +294,7 @@ build_sc_ec <- function(input,
     chunk_size = chunk_size,
     FUN = function(chunk) {
       data.table::setnames(chunk, 1L, "read_id")
-      # dedup first — counts has multiple rows per read (multi-mapping)
+      # dedup first -- counts has multiple rows per read (multi-mapping)
       chunk <- unique(chunk, by = "read_id")
       chunk <- chunk[read_id %in% valid_reads]
       if (nrow(chunk) == 0L) return(NULL)
@@ -350,7 +379,7 @@ build_sc_ec <- function(input,
   # A: sort t_idx within obs so paste order is canonical
   data.table::setorder(dt_full, group_id, obs_key, t_idx)
 
-  # B: EC key per (group_id, obs_key) — one vectorised groupby
+  # B: EC key per (group_id, obs_key) -- one vectorised groupby
   obs_ec <- dt_full[,
     .(ec_key = paste(t_idx, collapse = "|")),
     by = .(group_id, obs_key)
@@ -362,7 +391,7 @@ build_sc_ec <- function(input,
   # D: EC count = number of observations per EC
   ec_counts <- obs_ec[, .(count = .N), by = .(group_id, ec_id, ec_key)]
 
-  # E: t_indices — parse ec_key string (avoids re-joining dt_full)
+  # E: t_indices -- parse ec_key string (avoids re-joining dt_full)
   unique_ecs <- unique(ec_counts[, .(group_id, ec_id, ec_key)])
   unique_ecs[, t_indices := lapply(
     strsplit(ec_key, "|", fixed = TRUE), as.integer

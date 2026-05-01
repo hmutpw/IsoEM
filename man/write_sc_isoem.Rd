@@ -4,37 +4,86 @@
 \alias{write_sc_isoem}
 \title{Write single-cell IsoEM results to disk}
 \usage{
-write_sc_isoem(result, outdir, compress = FALSE, verbose = TRUE)
+write_sc_isoem(
+  result,
+  outdir,
+  compress = FALSE,
+  write_ec_table = TRUE,
+  write_sharing_table = TRUE,
+  min_sharing = 0.5,
+  max_ec_size_sharing = 50L,
+  verbose = TRUE
+)
 }
 \arguments{
-\item{result}{An \code{IsoEMSCResult} from \code{\link{run_sc_isoem}}.}
+\item{result}{An \code{IsoEMSCResult} from \code{\link{run_sc_isoem}}
+or \code{\link{run_em}}.}
 
 \item{outdir}{Character. Output directory (created if absent).}
 
 \item{compress}{Logical. Write \code{.gz} compressed files (default FALSE).}
 
-\item{verbose}{Logical (default TRUE).}
+\item{write_ec_table}{Logical. Write \code{ec_table.tsv} if EC data is
+available in the result object (default TRUE). Columns: \code{group_id}
+(barcode), \code{ec_id}, \code{transcripts} (pipe-separated),
+\code{count}, \code{ec_size}, \code{ec_type} (\code{"unique"} or
+\code{"multi"}).}
+
+\item{write_sharing_table}{Logical. Write \code{sharing_table.tsv} if EC
+data is available (default TRUE). Sharing is computed by pooling UMI
+counts across all barcodes first. See \code{min_sharing} and
+\code{max_ec_size_sharing}.}
+
+\item{min_sharing}{Numeric in [0, 1]. Only transcript pairs with
+\code{sharing_fraction >= min_sharing} are reported (default 0.5).
+\code{sharing_fraction = shared_reads / min(total_reads_tx1, total_reads_tx2)}.}
+
+\item{max_ec_size_sharing}{Integer. ECs with more than this many transcripts
+are excluded from pairwise sharing computation (default 50). Prevents
+combinatorial explosion at repetitive TE loci.}
+
+\item{verbose}{Logical. Print progress messages (default TRUE).}
 }
 \value{
 Invisibly returns \code{outdir}.
 }
 \description{
-Writes all output files for an \code{IsoEMSCResult} object:
-\itemize{
-  \item \code{matrix/matrix.mtx[.gz]}    — sparse EM count matrix
-  \item \code{matrix/features.tsv[.gz]}  — transcript annotations (rows)
-  \item \code{matrix/barcodes.tsv[.gz]}  — cell barcodes (columns)
-  \item \code{cell_qc.tsv[.gz]}          — per-cell QC metrics
-}
+Writes all output files for an \code{IsoEMSCResult} object.
 }
 \details{
+Output files:
+\itemize{
+  \item \code{matrix/matrix.mtx[.gz]}    -- sparse EM count matrix (transcript x cell)
+  \item \code{matrix/features.tsv[.gz]}  -- transcript annotations: transcript_id, gene_id, is_novel
+  \item \code{matrix/barcodes.tsv[.gz]}  -- one cell barcode per line
+  \item \code{cell_qc.tsv[.gz]}          -- per-cell QC metrics
+  \item \code{ec_table.tsv[.gz]}         -- equivalence class table (if EC data present)
+  \item \code{sharing_table.tsv[.gz]}    -- transcript sharing pairs pooled across cells (if EC data present)
+}
+
 The \code{matrix/} subdirectory follows the 10x Genomics / STARsolo
 convention and can be loaded directly with \code{Seurat::Read10X()}.
+
+The \code{ec_table.tsv} for single-cell data contains one row per
+barcode-EC combination; the \code{sharing_table.tsv} aggregates counts
+across all cells before computing sharing fractions.
 }
 \examples{
-counts_f <- system.file("extdata", "toy_counts.tsv", package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf",        package = "IsoEM")
-bc_f     <- system.file("extdata", "toy_bc_umi.tsv", package = "IsoEM")
-result   <- run_sc_isoem(counts_f, gtf_f, bc_f)
+counts_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",            package = "IsoEM")
+bc_f     <- system.file("extdata", "toy_bc_umi.tsv",        package = "IsoEM")
+result   <- run_sc_isoem(counts_f, gtf_f, anno_file = bc_f, unit = "umi")
 write_sc_isoem(result, outdir = tempdir())
+
+# Write with all outputs, gzip compressed
+write_sc_isoem(result, outdir = tempdir(),
+               compress            = TRUE,
+               write_ec_table      = TRUE,
+               write_sharing_table = TRUE,
+               min_sharing         = 0.5,
+               max_ec_size_sharing = 50L)
+}
+\seealso{
+\code{\link{run_sc_isoem}}, \code{\link{run_em}},
+  \code{\link{write_isoem}}
 }

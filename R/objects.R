@@ -135,12 +135,14 @@ summary.IsoEMEC <- function(object, ...) print(object, ...)
 #' Constructor for IsoEMResult
 #' @keywords internal
 #' @noRd
-new_isoem_result <- function(sample_id, counts, qc, gtf_meta) {
+new_isoem_result <- function(sample_id, counts, qc, gtf_meta,
+                             ec_table = NULL) {
   structure(
     list(sample_id = sample_id,
          counts    = counts,
          qc        = qc,
-         gtf_meta  = gtf_meta),
+         gtf_meta  = gtf_meta,
+         ec_table  = ec_table),  # data.table: ec_id|t_indices|count (NULL if not stored)
     class = "IsoEMResult"
   )
 }
@@ -207,12 +209,14 @@ summary.IsoEMDataset <- function(object, ...) print(object, ...)
 #' Constructor for IsoEMSCResult
 #' @keywords internal
 #' @noRd
-new_isoem_sc_result <- function(count_matrix, cell_qc, gtf_meta, params) {
+new_isoem_sc_result <- function(count_matrix, cell_qc, gtf_meta, params,
+                                ec_table = NULL) {
   structure(
     list(count_matrix = count_matrix,
          cell_qc      = cell_qc,
          gtf_meta     = gtf_meta,
-         params       = params),
+         params       = params,
+         ec_table     = ec_table),  # data.table: group_id|ec_id|t_indices|count (NULL if not stored)
     class = "IsoEMSCResult"
   )
 }

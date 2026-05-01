@@ -19,71 +19,124 @@ run_sc_isoem(
   max_iter = 500L,
   tol = 1e-06,
   n_cores = 1L,
-  verbose = TRUE
+  verbose = TRUE,
+  write = TRUE,
+  compress = FALSE,
+  write_ec_table = TRUE,
+  write_sharing_table = TRUE,
+  min_sharing = 0.5,
+  max_ec_size_sharing = 50L
 )
 }
 \arguments{
 \item{counts_file}{Character. Path to IsoQuant
-\code{transcript_model_reads.tsv[.gz]}. Two columns, no header:
-\code{read_id | transcript_id}.}
+\code{transcript_model_reads.tsv[.gz]}.
+Each row: \code{read_id [TAB] transcript_id}. Reads mapping to \code{*}
+are discarded automatically.}
 
-\item{gtf_file}{Character. Path to IsoQuant
-\code{transcript_models.gtf[.gz]}.}
+\item{gtf_file}{Character. Path to IsoQuant \code{transcript_models.gtf[.gz]}.
+Used for gene and novelty annotation in the output.}
 
-\item{anno_file}{Character or NULL. Path to annotation file.
-\itemize{
-  \item \code{bulk_multi}: \code{read_id | sample_id} (2 cols)
-  \item \code{sc}: \code{read_id | barcode | umi} (3 cols)
-}
-Cannot be set together with \code{sample_id} or \code{pattern}.}
+\item{anno_file}{Character or NULL. Path to a three-column TSV
+(\code{read_id | barcode | umi}), no header, plain or gzip-compressed.
+Mutually exclusive with \code{pattern} / \code{bc_pattern} +
+\code{umi_pattern}. One of \code{anno_file} or \code{pattern} is
+required.}
 
-\item{pattern}{Character or NULL. Single regex with named capture groups
-to extract group info from read_id. Example:
-\code{".*_bc=(?P<barcode>[ACGT]+).*_sq=(?P<umi>[ACGT]+)"}.
-Cannot be set with \code{anno_file} or \code{sample_id}.}
+\item{pattern}{Character or NULL. A single PCRE regex with two named
+capture groups \code{(?P<barcode>...)} and \code{(?P<umi>...)} to
+extract barcode and UMI directly from read IDs. Used when
+\code{anno_file} is NULL.}
 
-\item{bc_pattern}{Character or NULL. Separate barcode regex (used with
-\code{umi_pattern} when \code{pattern} not provided).}
+\item{bc_pattern}{Character or NULL. Separate barcode regex. Used
+together with \code{umi_pattern} as an alternative to \code{pattern}.}
 
-\item{umi_pattern}{Character or NULL. Separate UMI regex.}
+\item{umi_pattern}{Character or NULL. Separate UMI regex. Used together
+with \code{bc_pattern}.}
 
-\item{barcodes_use}{Character vector or file path or NULL.
-Cell barcode whitelist for \code{sc} mode.}
+\item{barcodes_use}{Character vector, file path, or NULL. Cell barcode
+whitelist. If a file path, the file must contain one barcode per line
+(plain or gzip). Reads whose barcodes are not in the whitelist are
+discarded before EC construction (default NULL = use all barcodes).}
 
-\item{unit}{Character. \code{"umi"} (default for sc) or \code{"read"}.
-Controls whether EC construction uses UMI-level or read-level counts.}
+\item{unit}{Character. Observational unit for EC construction:
+\code{"umi"} (default, recommended) or \code{"read"}.
+In UMI mode, each \code{(barcode, UMI)} pair is a single observation;
+PCR duplicates are collapsed. In read mode, each aligned read is an
+independent observation.}
 
-\item{outdir}{Character. Output directory. A \code{temp/} subdirectory
-will be created here for intermediate files. Default: \code{"IsoEM_out"}.}
+\item{outdir}{Character. Output directory (default \code{"IsoEM_out"}).}
 
-\item{keep_temp}{Logical. Keep \code{temp/} directory (default FALSE).}
+\item{keep_temp}{Logical. Keep intermediate temp files (default FALSE).}
 
-\item{chunk_size}{Integer. Rows per chunk (default 5e6).}
+\item{chunk_size}{Integer. Rows per chunk for reading large files
+(default 5e6). Reduce to lower peak memory usage.}
 
-\item{max_iter}{Integer. Maximum EM iterations per group (default: 1000
-for bulk, 500 for sc).}
+\item{max_iter}{Integer. Maximum EM iterations per cell (default 500).}
 
-\item{tol}{Numeric. Convergence tolerance (default 1e-6).}
+\item{tol}{Numeric. EM convergence tolerance (default 1e-6).}
 
-\item{n_cores}{Integer. Parallel workers (default 1).
-Uses \code{parallel::makeCluster} — compatible with Windows and Linux.}
+\item{n_cores}{Integer. Parallel workers (default 1). Parallelisation is
+applied across cells in the EM step and across groups in EC construction.}
 
-\item{verbose}{Logical (default TRUE).}
+\item{verbose}{Logical. Print progress messages (default TRUE).}
+
+\item{write}{Logical. Automatically write results to \code{outdir}
+after EM completes (default TRUE). Calls \code{\link{write_sc_isoem}}
+with the parameters below. Set to FALSE to return the result object
+without writing.}
+
+\item{compress}{Logical. Write \code{.gz} compressed output files
+(default FALSE). Passed to \code{\link{write_sc_isoem}}.}
+
+\item{write_ec_table}{Logical. Write \code{ec_table.tsv} (default TRUE).
+Passed to \code{\link{write_sc_isoem}}.}
+
+\item{write_sharing_table}{Logical. Write \code{sharing_table.tsv}
+(default TRUE). Passed to \code{\link{write_sc_isoem}}.}
+
+\item{min_sharing}{Numeric. Minimum sharing fraction for sharing table
+(default 0.5). Passed to \code{\link{write_sc_isoem}}.}
+
+\item{max_ec_size_sharing}{Integer. Max EC size for pairwise expansion
+(default 50). Passed to \code{\link{write_sc_isoem}}.}
 }
 \value{
-An \code{IsoEMSCResult}.
+An \code{IsoEMSCResult} containing:
+\itemize{
+  \item \code{count_matrix} — sparse Matrix (transcript x cell)
+  \item \code{cell_qc}      — data.table of per-cell QC metrics
+  \item \code{gtf_meta}     — transcript annotation from GTF
+  \item \code{ec_table}     — raw EC data.table (used by \code{write_sc_isoem})
+}
+Returned invisibly if \code{write = TRUE}.
 }
 \description{
 Convenience wrapper that calls \code{\link{prepare_isoem}},
 \code{\link{build_sc_ec}}, and \code{\link{run_em}} in sequence.
+For a modular workflow that allows saving the intermediate \code{IsoEMEC}
+object (recommended for large datasets), call those functions separately.
 }
 \examples{
-counts_f <- system.file("extdata", "toy_counts.tsv",   package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf",          package = "IsoEM")
+counts_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",          package = "IsoEM")
 bc_f     <- system.file("extdata", "toy_bc_umi.tsv",   package = "IsoEM")
-result   <- run_sc_isoem(counts_f, gtf_f,
-  anno_file = bc_f, unit = "umi")
+
+# anno_file mode — write automatically
+result <- run_sc_isoem(counts_f, gtf_f,
+  anno_file = bc_f, unit = "umi", outdir = tempdir())
+
+# Inspect before writing
+result <- run_sc_isoem(counts_f, gtf_f,
+  anno_file = bc_f, unit = "umi", write = FALSE)
 print(result)
+write_sc_isoem(result, outdir = tempdir())
+
+# regex mode
+regex_f <- system.file("extdata", "toy_counts_regex.tsv", package = "IsoEM")
+result  <- run_sc_isoem(regex_f, gtf_f,
+  pattern = ".*_bc=(?P<barcode>[A-Z0-9]+)_sq=(?P<umi>[ACGT]+)",
+  unit = "umi", outdir = tempdir())
 }
 \seealso{
 \code{\link{prepare_isoem}}, \code{\link{build_sc_ec}},

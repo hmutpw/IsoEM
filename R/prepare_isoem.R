@@ -47,8 +47,8 @@
 #' @export
 #'
 #' @examples
-#' counts_f <- system.file("extdata", "toy_counts.tsv",  package = "IsoEM")
-#' gtf_f    <- system.file("extdata", "toy.gtf",         package = "IsoEM")
+#' counts_f <- system.file("extdata", "toy_counts.tsv.gz",  package = "IsoEM")
+#' gtf_f    <- system.file("extdata", "toy.gtf.gz",         package = "IsoEM")
 #'
 #' # bulk single-sample
 #' input <- prepare_isoem(counts_f, gtf_f,
@@ -56,8 +56,9 @@
 #' print(input)
 #'
 #' # single-cell with anno_file
-#' bc_f  <- system.file("extdata", "toy_bc_umi.tsv", package = "IsoEM")
-#' input_sc <- prepare_isoem(counts_f, gtf_f,
+#' counts_sc_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
+#' bc_f        <- system.file("extdata", "toy_bc_umi.tsv",       package = "IsoEM")
+#' input_sc    <- prepare_isoem(counts_sc_f, gtf_f,
 #'   mode = "sc", anno_file = bc_f, unit = "umi")
 #' print(input_sc)
 prepare_isoem <- function(

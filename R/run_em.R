@@ -21,35 +21,48 @@
 #'   Uses \code{parallel::makeCluster} — compatible with Windows and Linux.
 #' @param verbose Logical (default TRUE).
 #'
-#' @return
+#' @return Depending on \code{ec$mode}:
 #' \describe{
-#'   \item{bulk single-sample}{\code{IsoEMResult}}
-#'   \item{bulk multi-sample}{\code{IsoEMDataset}}
-#'   \item{sc}{\code{IsoEMSCResult}}
+#'   \item{bulk single-sample}{\code{IsoEMResult} with fields \code{sample_id},
+#'     \code{counts} (data.table), \code{qc} (list), \code{gtf_meta},
+#'     \code{ec_table} (data.table or NULL)}
+#'   \item{bulk multi-sample}{\code{IsoEMDataset} containing a list of
+#'     \code{IsoEMResult} objects plus \code{count_matrix} and \code{tpm_matrix}}
+#'   \item{sc}{\code{IsoEMSCResult} with fields \code{count_matrix} (sparse
+#'     Matrix, transcript x cell), \code{cell_qc} (data.table), \code{gtf_meta},
+#'     \code{ec_table} (data.table or NULL)}
 #' }
+#'
+#' The \code{ec_table} field is populated automatically from the \code{IsoEMEC}
+#' object and is used by \code{\link{write_isoem}} / \code{\link{write_sc_isoem}}
+#' to produce \code{ec_table.tsv} and \code{sharing_table.tsv}.
 #'
 #' @seealso \code{\link{build_ec}}, \code{\link{build_sc_ec}},
 #'   \code{\link{write_isoem}}, \code{\link{write_sc_isoem}}
 #' @export
 #'
 #' @examples
-#' counts_f <- system.file("extdata", "toy_counts.tsv",  package = "IsoEM")
-#' gtf_f    <- system.file("extdata", "toy.gtf",         package = "IsoEM")
+#' counts_f <- system.file("extdata", "toy_counts.tsv.gz",  package = "IsoEM")
+#' gtf_f    <- system.file("extdata", "toy.gtf.gz",         package = "IsoEM")
 #'
-#' # bulk
+#' # Bulk single-sample
 #' input  <- prepare_isoem(counts_f, gtf_f,
 #'   mode = "bulk_single", sample_id = "toy")
 #' ec     <- build_ec(input)
 #' result <- run_em(ec)
 #' print(result)
+#' write_isoem(result, outdir = tempdir())
 #'
-#' # single-cell
+#' # Single-cell: build EC once, rerun EM with different params
+#' counts_sc_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
 #' bc_f      <- system.file("extdata", "toy_bc_umi.tsv", package = "IsoEM")
-#' input_sc  <- prepare_isoem(counts_f, gtf_f,
+#' input_sc  <- prepare_isoem(counts_sc_f, gtf_f,
 #'   mode = "sc", anno_file = bc_f, unit = "umi")
 #' ec_sc     <- build_sc_ec(input_sc)
-#' result_sc <- run_em(ec_sc)
+#' # saveRDS(ec_sc, "ec.rds")  # save for parameter tuning
+#' result_sc <- run_em(ec_sc, max_iter = 500, tol = 1e-6)
 #' print(result_sc)
+#' write_sc_isoem(result_sc, outdir = tempdir())
 run_em <- function(ec,
                    gtf_file = NULL,
                    max_iter = NULL,
@@ -181,7 +194,7 @@ run_em <- function(ec,
 
   if (ec$mode == "sc") {
     return(.assemble_sc(em_results, group_ids, n_tx, tx_ids, gtf_meta,
-                        ec$input_params))
+                        ec$input_params, ec_table = ec$ec_table))
   }
   .assemble_bulk(em_results, ec, group_ids, n_tx, tx_ids, gtf_meta)
 }
@@ -190,7 +203,7 @@ run_em <- function(ec,
 #' @keywords internal
 #' @noRd
 .assemble_sc <- function(em_results, group_ids, n_tx, tx_ids,
-                          gtf_meta, params) {
+                          gtf_meta, params, ec_table = NULL) {
   n_cells <- length(group_ids)
   threshold <- 0.01
 
@@ -229,7 +242,8 @@ run_em <- function(ec,
     lapply(qc_list, data.table::as.data.table)
   )
 
-  new_isoem_sc_result(mat, cell_qc, gtf_meta, params)
+  new_isoem_sc_result(mat, cell_qc, gtf_meta, params,
+                      ec_table = ec_table)
 }
 
 #' Assemble bulk result
@@ -300,7 +314,10 @@ run_em <- function(ec,
       n_iter                 = res$n_iter,
       converged              = res$converged
     )
-    return(new_isoem_result(grp, counts, qc, gtf_meta))
+    ec_grp <- if (!is.null(ec$ec_table))
+      ec$ec_table[group_id == grp, .(ec_id, t_indices, count)]
+    else NULL
+    return(new_isoem_result(grp, counts, qc, gtf_meta, ec_table = ec_grp))
   }
 
   results_list <- lapply(group_ids, function(grp) {
@@ -317,7 +334,10 @@ run_em <- function(ec,
       n_iter                 = res$n_iter,
       converged              = res$converged
     )
-    new_isoem_result(grp, counts, qc, gtf_meta)
+    ec_grp <- if (!is.null(ec$ec_table))
+      ec$ec_table[group_id == grp, .(ec_id, t_indices, count)]
+    else NULL
+    new_isoem_result(grp, counts, qc, gtf_meta, ec_table = ec_grp)
   })
   names(results_list) <- group_ids
 
