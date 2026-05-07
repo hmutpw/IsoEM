@@ -55,7 +55,8 @@ One-step wrappers `run_isoem()` and `run_sc_isoem()` chain all steps automatical
 
 ```r
 # From GitHub (recommended)
-devtools::install_github("hmutpw/IsoEM")
+if (!require("remotes")) install.packages("remotes")
+remotes::install_github("hmutpw/IsoEM", upgrade = "never")
 
 # From local tarball
 install.packages("IsoEM_0.3.1.tar.gz", repos = NULL, type = "source")
