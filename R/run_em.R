@@ -342,7 +342,8 @@ run_em <- function(ec,
     ec_grp <- if (!is.null(ec$ec_table))
       ec$ec_table[group_id == grp, .(ec_id, t_indices, count)]
     else NULL
-    return(new_isoem_result(grp, counts, qc, gtf_meta, ec_table = ec_grp))
+    return(new_isoem_result(grp, counts, qc, gtf_meta, ec_table = ec_grp,
+                            tx_map = tx_ids))
   }
 
   results_list <- lapply(group_ids, function(grp) {
@@ -362,7 +363,8 @@ run_em <- function(ec,
     ec_grp <- if (!is.null(ec$ec_table))
       ec$ec_table[group_id == grp, .(ec_id, t_indices, count)]
     else NULL
-    new_isoem_result(grp, counts, qc, gtf_meta, ec_table = ec_grp)
+    new_isoem_result(grp, counts, qc, gtf_meta, ec_table = ec_grp,
+                     tx_map = tx_ids)
   })
   names(results_list) <- group_ids
 

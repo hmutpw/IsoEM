@@ -54,7 +54,7 @@ Writes all output files for an \code{IsoEMSCResult} object.
 Output files:
 \itemize{
   \item \code{matrix/matrix.mtx[.gz]}    -- sparse EM count matrix (transcript x cell)
-  \item \code{matrix/features.tsv[.gz]}  -- transcript annotations: transcript_id, gene_id, is_novel
+  \item \code{matrix/features.tsv[.gz]}  -- transcript annotations: transcript_id, gene_id, feature_type
   \item \code{matrix/barcodes.tsv[.gz]}  -- one cell barcode per line
   \item \code{cell_qc.tsv[.gz]}          -- per-cell QC metrics
   \item \code{ec_table.tsv[.gz]}         -- equivalence class table (if EC data present)

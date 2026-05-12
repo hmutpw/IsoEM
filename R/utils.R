@@ -185,23 +185,33 @@
   if (compress) paste0(base, ".gz") else base
 }
 
-#' Estimate file row count (cross-platform, uses R connection)
+#' Estimate file row count
+#'
+#' For gzipped files, uses a fast file-size heuristic (no decompression)
+#' to avoid the ~30s overhead of opening a gzip R connection.
+#' For plain files, samples a few lines for a more accurate estimate.
 #' @keywords internal
 #' @noRd
 .estimate_rows <- function(path) {
   sz <- file.info(path)$size
   if (is.na(sz)) return(NA_integer_)
   gz <- grepl("\\.gz$", path, ignore.case = TRUE)
-  con <- tryCatch(.read_con(path), error = function(e) NULL)
-  if (is.null(con)) return(NA_integer_)
-  on.exit(close(con), add = TRUE)
-  sample_lines <- tryCatch(readLines(con, n = 200L, warn = FALSE),
-                           error = function(e) NULL)
-  if (is.null(sample_lines) || length(sample_lines) == 0L) return(NA_integer_)
-  bytes_per_row <- nchar(paste(sample_lines, collapse = "\n")) /
-                   length(sample_lines)
-  if (gz) sz <- sz * 4L
-  as.integer(sz / max(bytes_per_row, 1))
+
+  if (gz) {
+    # Fast heuristic: assume ~4x compression, ~60 bytes/row (typical TSV)
+    # Avoids opening gzip connection which is very slow on large files
+    as.integer(sz * 4 / 60)
+  } else {
+    con <- tryCatch(file(path, "rt"), error = function(e) NULL)
+    if (is.null(con)) return(NA_integer_)
+    on.exit(close(con), add = TRUE)
+    sample_lines <- tryCatch(readLines(con, n = 200L, warn = FALSE),
+                             error = function(e) NULL)
+    if (is.null(sample_lines) || length(sample_lines) == 0L) return(NA_integer_)
+    bytes_per_row <- nchar(paste(sample_lines, collapse = "\n")) /
+                     length(sample_lines)
+    as.integer(sz / max(bytes_per_row, 1))
+  }
 }
 
 #' Human-readable file size string
@@ -301,29 +311,45 @@
 # -----------------------------------------------------------------------------
 
 #' Parse GTF: extract transcript_id, gene_id, is_novel
+#'
+#' Uses readLines + grepl to filter to transcript lines, then vectorised
+#' sub() directly on the lines for attribute extraction (no intermediate
+#' fread/paste step).
 #' @keywords internal
 #' @noRd
 .parse_gtf <- function(gtf_file) {
   con <- .read_con(gtf_file)
   on.exit(close(con))
-  lines    <- readLines(con)
-  tx_lines <- lines[grepl("\ttranscript\t", lines)]
-  if (length(tx_lines) == 0L)
-    tx_lines <- lines[grepl("\texon\t", lines)]
+  lines <- readLines(con)
 
-  .extract_attr <- function(field, text) {
-    pattern <- paste0(field, ' "([^"]+)"')
-    m   <- regmatches(text, regexpr(pattern, text, perl = TRUE))
-    out <- rep(NA_character_, length(text))
-    hit <- nchar(m) > 0
-    out[hit] <- sub(paste0('.*', field, ' "([^"]+)".*'), "\\1", m[hit])
-    out
-  }
+  # Filter: drop comments, keep only transcript (or exon) features
+  lines <- lines[!startsWith(lines, "#")]
+  tx_lines <- lines[grepl("\ttranscript\t", lines, fixed = FALSE)]
+  if (length(tx_lines) == 0L)
+    tx_lines <- lines[grepl("\texon\t", lines, fixed = FALSE)]
+  rm(lines)
+
+  if (length(tx_lines) == 0L)
+    return(data.table::data.table(
+      transcript_id = character(), gene_id = character(),
+      is_novel = logical()
+    ))
+
+  # Vectorised attribute extraction — apply sub() directly to full lines
+  tx_id <- sub('.*transcript_id "([^"]+)".*', "\\1", tx_lines, perl = TRUE)
+  g_id  <- sub('.*gene_id "([^"]+)".*',       "\\1", tx_lines, perl = TRUE)
+  rm(tx_lines)
+
+  # sub() returns the original string when no match — mark as NA
+  long_mask <- nchar(tx_id) > 200L
+  tx_id[long_mask] <- NA_character_
+  long_mask <- nchar(g_id) > 200L
+  g_id[long_mask]  <- NA_character_
 
   meta <- data.table::data.table(
-    transcript_id = .extract_attr("transcript_id", tx_lines),
-    gene_id       = .extract_attr("gene_id",       tx_lines),
-    is_novel      = grepl("novel|NOVEL", tx_lines, ignore.case = FALSE)
+    transcript_id = tx_id,
+    gene_id       = g_id,
+    is_novel      = grepl("novel", tx_id, ignore.case = TRUE)
   )
   meta <- unique(meta, by = "transcript_id")
   meta[!is.na(transcript_id)]
@@ -334,6 +360,11 @@
 # -----------------------------------------------------------------------------
 
 #' EM for one group (one sample or one cell)
+#'
+#' Vectorised implementation: unique ECs (ec_size == 1) are pre-computed once
+#' (no iteration needed). Multi-mapping ECs are flattened into parallel arrays
+#' and processed with rowsum() — no per-EC R for-loop.
+#'
 #' @param ec_sub   data.table: ec_id | t_indices (list col) | count
 #' @param n_tx     integer: total transcripts in universe
 #' @param max_iter integer
@@ -348,23 +379,58 @@
   ec_sizes    <- lengths(ec_tx_list)
   n_unique_ec <- sum(ec_sizes == 1L)
 
+  # --- Pre-compute unique-EC allocations (constant across iterations) --------
+  uniq_mask  <- ec_sizes == 1L
+  uniq_alloc <- numeric(n_tx)
+  if (any(uniq_mask)) {
+    uniq_t <- unlist(ec_tx_list[uniq_mask], use.names = FALSE)
+    uniq_c <- ec_cnt_v[uniq_mask]
+    agg    <- rowsum(uniq_c, uniq_t, reorder = FALSE)
+    uniq_alloc[as.integer(rownames(agg))] <- agg[, 1L]
+  }
+
+  # --- Multi-mapping ECs: flatten for vectorised ops -------------------------
+  multi_idx <- which(!uniq_mask)
+  n_multi   <- length(multi_idx)
+
+  if (n_multi == 0L) {
+    return(list(counts = uniq_alloc, n_iter = 0L, converged = TRUE,
+                n_ec = n_ec, n_unique_ec = n_unique_ec))
+  }
+
+  multi_list  <- ec_tx_list[multi_idx]
+  multi_cnt   <- ec_cnt_v[multi_idx]
+  multi_sizes <- ec_sizes[multi_idx]
+
+  flat_t      <- unlist(multi_list, use.names = FALSE)      # transcript indices
+  flat_k      <- rep.int(seq_len(n_multi), multi_sizes)     # which multi-EC
+  flat_c      <- rep.int(multi_cnt, multi_sizes)            # count per entry
+  flat_inv_sz <- 1 / rep.int(multi_sizes, multi_sizes)      # uniform fallback
+
+  # --- EM iterations (only on multi-mapping ECs) -----------------------------
   counts    <- rep(1 / n_tx, n_tx)
   converged <- FALSE
   n_iter    <- 0L
 
   for (iter in seq_len(max_iter)) {
     n_iter <- iter
-    alloc  <- numeric(n_tx)
-    for (k in seq_len(n_ec)) {
-      txs   <- ec_tx_list[[k]]
-      w     <- counts[txs]
-      w_sum <- sum(w)
-      if (w_sum < .Machine$double.eps)
-        w <- rep(1 / length(txs), length(txs))
-      else
-        w <- w / w_sum
-      alloc[txs] <- alloc[txs] + w * ec_cnt_v[k]
-    }
+
+    # E-step: vectorised weight computation
+    flat_w    <- counts[flat_t]
+    ec_sums   <- rowsum(flat_w, flat_k, reorder = FALSE)[, 1L]
+    ec_sums_e <- ec_sums[flat_k]
+
+    # Normalise (uniform fallback for zero-sum ECs)
+    flat_wn   <- flat_w / ec_sums_e
+    zero_mask <- ec_sums_e < .Machine$double.eps
+    if (any(zero_mask)) flat_wn[zero_mask] <- flat_inv_sz[zero_mask]
+
+    # M-step: scatter-add fractional allocations via rowsum
+    alloc_raw   <- rowsum(flat_wn * flat_c, flat_t, reorder = FALSE)
+    multi_alloc <- numeric(n_tx)
+    multi_alloc[as.integer(rownames(alloc_raw))] <- alloc_raw[, 1L]
+
+    alloc <- uniq_alloc + multi_alloc
     total <- sum(alloc)
     if (total < .Machine$double.eps) break
     delta  <- sum(abs(alloc - counts)) / total

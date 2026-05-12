@@ -15,8 +15,19 @@
 #' @import data.table
 #' @importFrom Matrix sparseMatrix nnzero writeMM
 #' @importFrom methods is
-#' @importFrom parallel mclapply
+#' @importFrom parallel makeCluster stopCluster clusterExport parLapply
 #' @importFrom stats median setNames
 #' @importFrom utils write.table
 #' @importFrom tools file_path_sans_ext
 "_PACKAGE"
+
+# Suppress R CMD check NOTEs for data.table non-standard evaluation
+utils::globalVariables(c(
+  ".", "N", "certainty", "count", "ec_id", "ec_key", "ec_size", "ec_type",
+  "em_count", "feature_type", "gene_id", "group_id", "is_novel",
+  "multimapping_rate", "obs_id", "r_idx", "read_id", "recommendation",
+  "shared_reads", "sharing_fraction", "t1", "t2", "t_idx", "t_indices",
+  "t_key", "total_count", "total_reads_tx1", "total_reads_tx2",
+  "transcript_1", "transcript_2", "transcript_id", "transcripts",
+  "umi", "unique_count"
+))

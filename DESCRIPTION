@@ -1,17 +1,19 @@
 Package: IsoEM
 Type: Package
 Title: EM-Based Transcript Quantification for Long-Read RNA-seq
-Version: 0.3.4
+Version: 0.3.5
 Authors@R: person("hmutpw", role = c("aut", "cre"),
     email = "hmutpw@github.com")
-Description: Post-processing package for IsoQuant long-read RNA-seq output.
-    Provides a modular pipeline: prepare_isoem() validates input files and
-    creates a lightweight IsoEMInput object; build_ec() / build_sc_ec()
-    construct equivalence classes from bulk or single-cell data; run_em()
-    performs EC-compressed EM quantification; write_isoem() / write_sc_isoem()
-    write results to disk. One-step wrappers run_isoem() and run_sc_isoem()
-    are also provided. Designed for large files with memory-efficient
-    chunk processing and shell-level sort+join.
+Description: Post-processes IsoQuant long-read RNA-seq output using
+    equivalence-class (EC) compressed EM to produce statistically principled
+    transcript-level counts. Provides a modular pipeline: prepare_isoem()
+    validates input files; build_ec() / build_sc_ec() construct equivalence
+    classes from bulk or single-cell data with UMI deduplication; run_em()
+    performs vectorised EM quantification; write_isoem() / write_sc_isoem()
+    write results to disk including EC tables and transcript sharing analysis.
+    One-step wrappers run_isoem() and run_sc_isoem() are also provided.
+    Designed for transposable element analysis and large spatial/single-cell
+    datasets with memory-efficient chunk processing.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.1.0)
@@ -19,11 +21,11 @@ Imports: data.table (>= 1.14.0), Matrix (>= 1.5.0), methods, parallel,
         stats, utils, tools
 Suggests: testthat (>= 3.0.0), knitr, rmarkdown
 VignetteBuilder: knitr
-RoxygenNote: 7.3.3
 Config/testthat/edition: 3
 URL: https://github.com/hmutpw/IsoEM
 BugReports: https://github.com/hmutpw/IsoEM/issues
 NeedsCompilation: no
-Packaged: 2026-05-01 15:14:24 UTC; root
+Packaged: 2026-05-12 07:56:30 UTC; puwentan
 Author: hmutpw [aut, cre]
 Maintainer: hmutpw <hmutpw@github.com>
+Config/roxygen2/version: 8.0.0

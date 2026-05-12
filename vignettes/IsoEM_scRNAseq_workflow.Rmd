@@ -1,51 +1,77 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "IsoEM: Single-Cell RNA-seq Workflow"
+author: "hmutpw"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{IsoEM: Single-Cell RNA-seq Workflow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
 ---
 
-### 1. testfiles
+### Single-cell workflow with built-in toy data
 
-#### 1.1 validate inputs — returns lightweight IsoEMInput object
+#### 1. One-step workflow
 
-
-```{r}
+```{r onestep}
 library(IsoEM)
-counts_f <- "../../../01.test_data/mm39_brain/SAMEA117622252/OUT_mm39_SAMEA117622252.transcript_model_reads.tsv.gz"
-gtf_f    <- "../../../01.test_data/mm39_brain/SAMEA117622252/OUT_mm39_SAMEA117622252.transcript_models.gtf"
 
-result <- run_isoem(
+counts_f <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",           package = "IsoEM")
+bc_f     <- system.file("extdata", "toy_bc_umi.tsv",       package = "IsoEM")
+
+result <- run_sc_isoem(
   counts_file = counts_f,
   gtf_file    = gtf_f,
-  mode        = "bulk_single",
-  sample_id   = "SAMEA117622252",
-  outdir      = "IsoEM_out")
+  anno_file   = bc_f,
+  unit        = "umi",
+  outdir      = file.path(tempdir(), "isoem_sc"),
+  verbose     = TRUE
+)
 
+print(result)
+```
 
+#### 2. Step-by-step (modular) workflow
 
-
+```{r modular}
+# Step 1: validate inputs
 input <- prepare_isoem(
   counts_file = counts_f,
   gtf_file    = gtf_f,
-  mode        = "bulk_single",
-  sample_id   = "SAMEA117622252",
-  outdir      = "output"
+  mode        = "sc",
+  anno_file   = bc_f,
+  unit        = "umi",
+  outdir      = file.path(tempdir(), "isoem_sc2"),
+  verbose     = FALSE
 )
 print(input)
 
-
 # Step 2: build equivalence classes
-ec <- build_ec(input, n_cores = 1, verbose = FALSE)
+ec <- build_sc_ec(input, n_cores = 1, verbose = FALSE)
 print(ec)
 
 # Step 3: run EM
-result <- run_em(ec, n_cores = 6, verbose = FALSE)
+result <- run_em(ec, n_cores = 1, verbose = FALSE)
 print(result)
 
-# Inspect counts table
-head(result$counts[, .(transcript_id, gene_id, em_count, tpm, certainty)])
-
-
-
-
+# Inspect cell QC
+head(result$cell_qc)
 ```
 
+#### 3. Applying to real data
+
+For real datasets, replace the toy file paths with your own IsoQuant output:
+
+```{r real_data, eval=FALSE}
+result <- run_sc_isoem(
+  counts_file = "your_sample.transcript_model_reads.tsv.gz",
+  gtf_file    = "your_sample.transcript_models.gtf",
+  anno_file   = "read_bc_umi.tsv.gz",
+  unit        = "umi",
+  outdir      = "IsoEM_out",
+  n_cores     = 8
+)
+```

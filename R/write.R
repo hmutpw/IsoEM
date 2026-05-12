@@ -91,21 +91,29 @@ write_isoem.IsoEMResult <- function(result, outdir, compress = FALSE,
   .write_tsv(result$counts, cnt_path, compress)
 
   # qc
-  qc_dt <- data.table::as.data.table(
-    as.list(result$qc)[c("total_reads", "unique_assignment_rate",
-                         "n_transcripts_detected", "n_unique_ecs",
-                         "n_multi_ecs", "n_iter", "converged")]
+  qc_src <- result$qc
+  qc_dt <- data.table::data.table(
+    sample_id              = result$sample_id,
+    total_reads            = qc_src$total_reads,
+    unique_assignment_rate = qc_src$unique_assignment_rate,
+    n_transcripts_detected = qc_src$n_transcripts_detected,
+    n_unique_ecs           = qc_src$n_unique_ec,
+    n_multi_ecs            = qc_src$n_ec - qc_src$n_unique_ec,
+    n_iter                 = qc_src$n_iter,
+    converged              = qc_src$converged
   )
-  qc_dt[, sample_id := result$sample_id]
   qc_path <- file.path(outdir, .ext("qc.tsv", compress))
   .write_tsv(qc_dt, qc_path, compress)
 
   # ec_table
+  # Use tx_map (original integer-index order) for mapping t_indices -> names.
+  # result$counts$transcript_id is reordered by em_count and cannot be used.
+  tx_ids_ordered <- result$tx_map %||% sort(result$counts$transcript_id)
   ec_path <- NULL
   if (write_ec_table) {
     if (!is.null(result$ec_table) && nrow(result$ec_table) > 0L) {
       ec_path <- file.path(outdir, .ext("ec_table.tsv", compress))
-      .write_tsv(.format_ec_bulk(result$ec_table, result$counts$transcript_id,
+      .write_tsv(.format_ec_bulk(result$ec_table, tx_ids_ordered,
                                  result$sample_id),
                  ec_path, compress)
     } else if (verbose) {
@@ -118,7 +126,7 @@ write_isoem.IsoEMResult <- function(result, outdir, compress = FALSE,
   if (write_sharing_table) {
     if (!is.null(result$ec_table) && nrow(result$ec_table) > 0L) {
       sh_dt   <- .compute_sharing(result$ec_table,
-                                  result$counts$transcript_id,
+                                  tx_ids_ordered,
                                   result$sample_id,
                                   min_sharing, as.integer(max_ec_size_sharing))
       sh_path <- file.path(outdir, .ext("sharing_table.tsv", compress))
@@ -180,7 +188,7 @@ write_isoem.IsoEMDataset <- function(result, outdir, compress = FALSE,
 #' Output files:
 #' \itemize{
 #'   \item \code{matrix/matrix.mtx[.gz]}    -- sparse EM count matrix (transcript x cell)
-#'   \item \code{matrix/features.tsv[.gz]}  -- transcript annotations: transcript_id, gene_id, is_novel
+#'   \item \code{matrix/features.tsv[.gz]}  -- transcript annotations: transcript_id, gene_id, feature_type
 #'   \item \code{matrix/barcodes.tsv[.gz]}  -- one cell barcode per line
 #'   \item \code{cell_qc.tsv[.gz]}          -- per-cell QC metrics
 #'   \item \code{ec_table.tsv[.gz]}         -- equivalence class table (if EC data present)
@@ -272,7 +280,11 @@ write_sc_isoem <- function(result, outdir, compress = FALSE,
     Matrix::writeMM(result$count_matrix, file = mtx_path)
   }
 
-  # features.tsv: transcript_id, gene_id, is_novel
+  # features.tsv: transcript_id, gene_id, feature_type
+
+  # 10x / Seurat Read10X() expects 3 columns: id, name, feature_type.
+  # Use "Gene Expression" as the feature_type so Seurat creates a single
+  # default assay instead of splitting on TRUE/FALSE.
   feat <- data.table::data.table(
     transcript_id = rownames(result$count_matrix)
   )
@@ -281,8 +293,10 @@ write_sc_isoem <- function(result, outdir, compress = FALSE,
     feat[is.na(gene_id),  gene_id  := "unknown"]
     feat[is.na(is_novel), is_novel := FALSE]
   }
+  feat[, feature_type := "Gene Expression"]
+  feat_out <- feat[, .(transcript_id, gene_id, feature_type)]
   feat_path <- file.path(mat_dir, .ext("features.tsv", compress))
-  .write_tsv(feat, feat_path, compress, col.names = FALSE)
+  .write_tsv(feat_out, feat_path, compress, col.names = FALSE)
 
   # barcodes.tsv
   bc_path <- file.path(mat_dir, .ext("barcodes.tsv", compress))
@@ -333,17 +347,6 @@ write_sc_isoem <- function(result, outdir, compress = FALSE,
   }
   invisible(outdir)
 }
-
-# helper: plain gzip without R.utils dependency
-.gzip_file <- function(src, dest) {
-  buf <- readBin(src, "raw", file.info(src)$size)
-  con <- gzfile(dest, "wb")
-  writeBin(buf, con)
-  close(con)
-  file.remove(src)
-  invisible(dest)
-}
-
 
 # =============================================================================
 # Internal helpers: EC formatting and sharing computation
@@ -420,21 +423,39 @@ write_sc_isoem <- function(result, outdir, compress = FALSE,
   )
   tx_total <- flat[, .(total_reads = sum(count)), by = t_idx]
 
-  # Pairwise expansion of multi-ECs
-  pairs_list <- vector("list", nrow(multi))
-  for (k in seq_len(nrow(multi))) {
-    idx <- multi$t_indices[[k]]
+  # Pairwise expansion of multi-ECs — vectorised
+  multi_idx   <- multi$t_indices
+  multi_cnt   <- multi$count
+  multi_sizes <- lengths(multi_idx)
+
+  # Pre-compute total number of pairs per EC: n*(n-1)/2
+  n_pairs <- multi_sizes * (multi_sizes - 1L) %/% 2L
+  total_pairs <- sum(n_pairs)
+
+  if (total_pairs == 0L) return(.empty_sharing_dt(sample_id))
+
+  # Pre-allocate flat vectors
+  t1_vec <- integer(total_pairs)
+  t2_vec <- integer(total_pairs)
+  sh_vec <- numeric(total_pairs)
+  pos    <- 1L
+
+  for (k in seq_along(multi_idx)) {
+    idx <- multi_idx[[k]]
     n   <- length(idx)
     if (n < 2L) next
     cm  <- utils::combn(n, 2L)
-    pairs_list[[k]] <- data.table::data.table(
-      t1           = idx[cm[1L, ]],
-      t2           = idx[cm[2L, ]],
-      shared_reads = multi$count[k]
-    )
+    np  <- ncol(cm)
+    rng <- pos:(pos + np - 1L)
+    t1_vec[rng] <- idx[cm[1L, ]]
+    t2_vec[rng] <- idx[cm[2L, ]]
+    sh_vec[rng] <- multi_cnt[k]
+    pos <- pos + np
   }
-  pairs <- data.table::rbindlist(pairs_list, fill = TRUE)
-  pairs <- pairs[!is.na(t1)]
+
+  pairs <- data.table::data.table(
+    t1 = t1_vec, t2 = t2_vec, shared_reads = sh_vec
+  )
   if (nrow(pairs) == 0L) return(.empty_sharing_dt(sample_id))
 
   # Aggregate shared reads per pair
@@ -470,27 +491,26 @@ write_sc_isoem <- function(result, outdir, compress = FALSE,
 }
 
 #' SC variant of sharing computation -- aggregates across all cells
+#'
+#' Pools counts across barcodes before computing sharing fractions.
+#' EC t_indices are already sorted from EC construction, so no re-sorting
+#' is needed — just paste for deduplication key.
 #' @keywords internal
 #' @noRd
 .compute_sharing_sc <- function(ec_table, tx_ids,
                                   min_sharing, max_ec_size_sharing) {
-  # Pool counts across barcodes for sharing analysis
-  pooled <- ec_table[, .(
-    t_indices = t_indices,
-    count     = count
-  )]
-  # Deduplicate by EC structure (group_id irrelevant for sharing)
+  # Pool counts across barcodes for sharing analysis.
+  # t_indices are already sorted from EC construction (no sort() needed).
   pooled <- ec_table[,
     .(count = sum(count)),
     by = .(t_key = vapply(t_indices,
-                          function(x) paste(sort(x), collapse="|"),
+                          function(x) paste(x, collapse = "|"),
                           character(1L)))
   ]
   pooled[, t_indices := lapply(
     strsplit(t_key, "|", fixed = TRUE), as.integer
   )]
 
-  # Re-use bulk sharing logic (sample_id = "all_cells")
   .compute_sharing(pooled, tx_ids, "all_cells",
                    min_sharing, max_ec_size_sharing)
 }

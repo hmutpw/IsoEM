@@ -58,7 +58,7 @@ automatically for convenience.
 devtools::install_github("hmutpw/IsoEM")
 
 # From local tarball
-install.packages("IsoEM_0.3.0.tar.gz", repos = NULL, type = "source")
+install.packages("IsoEM_0.3.5.tar.gz", repos = NULL, type = "source")
 ```
 
 ---
@@ -71,8 +71,8 @@ All examples use built-in toy datasets:
 library(IsoEM)
 
 # Core input files
-counts_f <- system.file("extdata", "toy_counts.tsv",       package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf",              package = "IsoEM")
+counts_f <- system.file("extdata", "toy_counts.tsv.gz",    package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",           package = "IsoEM")
 
 # Single-cell annotation: read_id | barcode | umi
 bc_f     <- system.file("extdata", "toy_bc_umi.tsv",       package = "IsoEM")
@@ -184,7 +184,7 @@ head(result_multi$count_matrix[1:5, ])
 ## Workflow 3: Single-cell (anno_file mode)
 
 The standard SC workflow uses a pre-prepared `read_id | barcode | umi`
-file (e.g. extracted from a minimap2 BAM using the bundled shell script).
+file (e.g. extracted from a minimap2 BAM using `samtools` — see below).
 
 ### One-step
 
@@ -343,21 +343,24 @@ print(result_tight)
 
 ## Extracting barcode/UMI from BAM
 
-For users starting from a minimap2-aligned BAM, IsoEM provides a shell
-script to extract `read_id | barcode | umi`:
+For users starting from a minimap2-aligned BAM, extract
+`read_id | barcode | umi` using `samtools`:
 
 ```bash
 # Default tags: BC:Z (barcode), U8:Z (UMI)
-bash $(Rscript -e "cat(system.file('scripts',
-  'extract_barcodes_from_bam.sh', package='IsoEM'))") \
-    -i aligned.bam \
-    -o read_bc_umi.tsv.gz \
-    -t 8
+samtools view aligned.bam \
+  | awk -F'\t' '{
+      bc=""; umi="";
+      for(i=12;i<=NF;i++){
+        if($i ~ /^BC:Z:/) bc=substr($i,6);
+        if($i ~ /^U8:Z:/) umi=substr($i,6);
+      }
+      if(bc!="" && umi!="") print $1"\t"bc"\t"umi
+    }' \
+  | gzip > read_bc_umi.tsv.gz
 
-# Custom tags (e.g. STARsolo / CellRanger output)
-bash extract_barcodes_from_bam.sh \
-    -i aligned.bam -o out.tsv.gz \
-    -b CB:Z -u UB:Z
+# Custom tags (e.g. STARsolo / CellRanger: CB:Z / UB:Z)
+# Replace BC:Z with CB:Z and U8:Z with UB:Z in the awk script above.
 ```
 
 The output is a 3-column TSV used as `anno_file` in `prepare_isoem()`.
@@ -389,7 +392,7 @@ Output follows the 10x Genomics / STARsolo Matrix Market convention:
 outdir/
 ├── matrix/
 │   ├── matrix.mtx[.gz]       # sparse (transcript × cell), EM counts
-│   ├── features.tsv[.gz]     # transcript_id, gene_id, is_novel
+│   ├── features.tsv[.gz]     # transcript_id, gene_id, feature_type
 │   └── barcodes.tsv[.gz]     # one barcode per line
 └── cell_qc.tsv[.gz]          # per-cell QC metrics
 ```
@@ -404,6 +407,9 @@ outdir/
 | `em_n_iter` | Actual EM iterations |
 | `n_ec` | Number of ECs for this cell |
 | `n_unique_ec` | ECs with only one compatible transcript |
+| `total_reads` | Total UMIs assigned to this cell |
+| `unique_reads` | UMIs from unique-mapping ECs |
+| `unique_read_frac` | `unique_reads / total_reads` -- mapping specificity (0--1) |
 
 ---
 

@@ -25,4 +25,9 @@ Useful links:
 \author{
 \strong{Maintainer}: hmutpw \email{hmutpw@github.com}
 
+Authors:
+\itemize{
+  \item hmutpw \email{hmutpw@github.com}
+}
+
 }

@@ -136,13 +136,14 @@ summary.IsoEMEC <- function(object, ...) print(object, ...)
 #' @keywords internal
 #' @noRd
 new_isoem_result <- function(sample_id, counts, qc, gtf_meta,
-                             ec_table = NULL) {
+                             ec_table = NULL, tx_map = NULL) {
   structure(
     list(sample_id = sample_id,
          counts    = counts,
          qc        = qc,
          gtf_meta  = gtf_meta,
-         ec_table  = ec_table),  # data.table: ec_id|t_indices|count (NULL if not stored)
+         ec_table  = ec_table,  # data.table: ec_id|t_indices|count (NULL if not stored)
+         tx_map    = tx_map),   # character vector: t_idx -> transcript_id (original order)
     class = "IsoEMResult"
   )
 }

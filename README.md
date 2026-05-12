@@ -1,4 +1,4 @@
-# IsoEM <img src="https://img.shields.io/badge/version-0.3.1-blue" align="right"/> <img src="https://img.shields.io/badge/R-%3E%3D4.1-brightgreen" align="right"/> <img src="https://img.shields.io/badge/license-MIT-lightgrey" align="right"/>
+# IsoEM <img src="https://img.shields.io/badge/version-0.3.5-blue" align="right"/> <img src="https://img.shields.io/badge/R-%3E%3D4.1-brightgreen" align="right"/> <img src="https://img.shields.io/badge/license-MIT-lightgrey" align="right"/>
 
 > EM-based transcript quantification for [IsoQuant](https://github.com/ablab/isoquant) long-read RNA-seq output.  
 > Supports bulk (single/multi-sample) and single-cell/spatial modes.  
@@ -55,11 +55,10 @@ One-step wrappers `run_isoem()` and `run_sc_isoem()` chain all steps automatical
 
 ```r
 # From GitHub (recommended)
-if (!require("remotes")) install.packages("remotes")
-remotes::install_github("hmutpw/IsoEM", upgrade = "never")
+devtools::install_github("hmutpw/IsoEM")
 
 # From local tarball
-install.packages("IsoEM_0.3.1.tar.gz", repos = NULL, type = "source")
+install.packages("IsoEM_0.3.5.tar.gz", repos = NULL, type = "source")
 ```
 
 **Dependencies:** `data.table`, `Matrix` (both on CRAN, installed automatically)
@@ -73,6 +72,7 @@ install.packages("IsoEM_0.3.1.tar.gz", repos = NULL, type = "source")
 ```r
 library(IsoEM)
 
+# run_isoem() writes results automatically (write = TRUE by default)
 result <- run_isoem(
   counts_file = "sample.transcript_model_reads.tsv.gz",
   gtf_file    = "sample.transcript_models.gtf",
@@ -80,6 +80,11 @@ result <- run_isoem(
   sample_id   = "my_sample",
   outdir      = "results/my_sample/"
 )
+# results/my_sample/
+# ├── counts.tsv
+# ├── qc.tsv
+# ├── ec_table.tsv
+# └── sharing_table.tsv
 
 print(result)
 # IsoEMResult
@@ -89,13 +94,16 @@ print(result)
 #   Unique assign rate : 68.3%
 #   Converged          : TRUE (87 iterations)
 
-# Write results to disk
+# Or inspect first, then write manually:
+result <- run_isoem(
+  counts_file = "sample.transcript_model_reads.tsv.gz",
+  gtf_file    = "sample.transcript_models.gtf",
+  mode        = "bulk_single",
+  sample_id   = "my_sample",
+  write       = FALSE                     # don't auto-write
+)
+print(result)
 write_isoem(result, outdir = "results/my_sample/")
-# results/my_sample/
-# ├── counts.tsv
-# ├── qc.tsv
-# ├── ec_table.tsv       ← NEW in v0.3.1
-# └── sharing_table.tsv  ← NEW in v0.3.1
 ```
 
 ### Bulk — multi-sample
@@ -141,9 +149,7 @@ write_sc_isoem(result, outdir = "results/sc_sample/")
 # │   ├── features.tsv
 # │   └── barcodes.tsv
 # ├── cell_qc.tsv
-# ├── ec_table.tsv       ← NEW in v0.3.1
-# └── sharing_table.tsv  ← NEW in v0.3.1
-```
+# ├── ec_table.tsv       # └── sharing_table.tsv  ```
 
 ### Single-cell — regex mode
 
@@ -247,8 +253,8 @@ write_sc_isoem(result, outdir = "results/sc_sample_v2/")
 outdir/
 ├── counts.tsv[.gz]         # transcript-level EM counts
 ├── qc.tsv[.gz]             # run QC summary
-├── ec_table.tsv[.gz]       # equivalence class table    [v0.3.1]
-└── sharing_table.tsv[.gz]  # transcript sharing pairs   [v0.3.1]
+├── ec_table.tsv[.gz]       # equivalence class table
+└── sharing_table.tsv[.gz]  # transcript sharing pairs
 
 # Multi-sample: per-sample subdirs + combined matrices
 outdir/
@@ -264,31 +270,31 @@ outdir/
 
 **`counts.tsv` columns:**
 
-| Column              | Description                                        |
-| ------------------- | -------------------------------------------------- |
-| `transcript_id`     | Transcript identifier                              |
-| `sample_id`         | Sample name                                        |
-| `em_count`          | EM-estimated read count                            |
-| `tpm`               | Transcripts Per Million                            |
-| `unique_count`      | Uniquely assigned reads                            |
-| `total_count`       | All compatible reads                               |
-| `certainty`         | `unique / total` — quantification confidence (0–1) |
-| `multimapping_rate` | `1 − certainty`                                    |
-| `gene_id`           | Gene (from GTF)                                    |
-| `is_novel`          | Novel IsoQuant transcript                          |
+| Column | Description |
+|--------|-------------|
+| `transcript_id` | Transcript identifier |
+| `sample_id` | Sample name |
+| `em_count` | EM-estimated read count |
+| `tpm` | Transcripts Per Million |
+| `unique_count` | Uniquely assigned reads |
+| `total_count` | All compatible reads |
+| `certainty` | `unique / total` — quantification confidence (0–1) |
+| `multimapping_rate` | `1 − certainty` |
+| `gene_id` | Gene (from GTF) |
+| `is_novel` | Novel IsoQuant transcript |
 
 **`qc.tsv` columns:**
 
-| Column                   | Description                      |
-| ------------------------ | -------------------------------- |
-| `sample_id`              | Sample name                      |
-| `total_reads`            | Total reads assigned to any EC   |
-| `unique_assignment_rate` | Fraction of reads in unique ECs  |
+| Column | Description |
+|--------|-------------|
+| `sample_id` | Sample name |
+| `total_reads` | Total reads assigned to any EC |
+| `unique_assignment_rate` | Fraction of reads in unique ECs |
 | `n_transcripts_detected` | Transcripts with EM count > 0.01 |
-| `n_unique_ecs`           | Single-transcript ECs            |
-| `n_multi_ecs`            | Multi-transcript ECs             |
-| `n_iter`                 | EM iterations used               |
-| `converged`              | Whether EM converged             |
+| `n_unique_ecs` | Single-transcript ECs |
+| `n_multi_ecs` | Multi-transcript ECs |
+| `n_iter` | EM iterations used |
+| `converged` | Whether EM converged |
 
 ---
 
@@ -298,26 +304,26 @@ outdir/
 outdir/
 ├── matrix/
 │   ├── matrix.mtx[.gz]       # sparse count matrix (transcript × cell)
-│   ├── features.tsv[.gz]     # transcript_id, gene_id, is_novel
+│   ├── features.tsv[.gz]     # transcript_id, gene_id, feature_type
 │   └── barcodes.tsv[.gz]     # one barcode per line
 ├── cell_qc.tsv[.gz]          # per-cell QC metrics
-├── ec_table.tsv[.gz]         # equivalence class table    [v0.3.1]
-└── sharing_table.tsv[.gz]    # transcript sharing pairs   [v0.3.1]
+├── ec_table.tsv[.gz]         # equivalence class table
+└── sharing_table.tsv[.gz]    # transcript sharing pairs
 ```
 
 **`cell_qc.tsv` columns:**
 
-| Column                   | Description                                               |
-| ------------------------ | --------------------------------------------------------- |
-| `barcode`                | Cell barcode                                              |
-| `n_transcripts_detected` | Transcripts with EM count > 0.01                          |
-| `em_converged`           | Whether EM converged for this cell                        |
-| `em_n_iter`              | Actual iterations used                                    |
-| `n_ec`                   | Number of ECs for this cell                               |
-| `n_unique_ec`            | Single-transcript ECs (ec_size == 1)                      |
-| `total_reads`            | Total UMIs assigned to this cell                          |
-| `unique_reads`           | UMIs from unique-mapping ECs                              |
-| `unique_read_frac`       | `unique_reads / total_reads` — mapping specificity (0--1) |
+| Column | Description |
+|--------|-------------|
+| `barcode` | Cell barcode |
+| `n_transcripts_detected` | Transcripts with EM count > 0.01 |
+| `em_converged` | Whether EM converged for this cell |
+| `em_n_iter` | Actual iterations used |
+| `n_ec` | Number of ECs for this cell |
+| `n_unique_ec` | Single-transcript ECs (ec_size == 1) |
+| `total_reads` | Total UMIs assigned to this cell |
+| `unique_reads` | UMIs from unique-mapping ECs |
+| `unique_read_frac` | `unique_reads / total_reads` — mapping specificity (0--1) |
 
 ---
 
@@ -328,14 +334,14 @@ both bulk and SC modes.
 
 **Bulk columns:**
 
-| Column        | Description                                            |
-| ------------- | ------------------------------------------------------ |
-| `sample_id`   | Sample name                                            |
-| `ec_id`       | Integer EC identifier (unique within sample)           |
+| Column | Description |
+|--------|-------------|
+| `sample_id` | Sample name |
+| `ec_id` | Integer EC identifier (unique within sample) |
 | `transcripts` | Pipe-separated transcript names (e.g. `TX1\|TX2\|TX3`) |
-| `count`       | Number of reads/UMIs in this EC                        |
-| `ec_size`     | Number of compatible transcripts                       |
-| `ec_type`     | `unique` (ec_size = 1) or `multi` (ec_size > 1)        |
+| `count` | Number of reads/UMIs in this EC |
+| `ec_size` | Number of compatible transcripts |
+| `ec_type` | `unique` (ec_size = 1) or `multi` (ec_size > 1) |
 
 **SC columns:** same, with `group_id` (barcode) instead of `sample_id`.
 
@@ -352,23 +358,22 @@ multi-mapping ECs. Useful for assessing quantification reliability, especially
 at repetitive TE loci.
 
 **Sharing fraction** is defined as:
-
 ```
 sharing_fraction = shared_reads / min(total_reads_tx1, total_reads_tx2)
 ```
 
 **Columns:**
 
-| Column                   | Description                                             |
-| ------------------------ | ------------------------------------------------------- |
-| `sample_id` / `group_id` | Sample name or cell barcode                             |
-| `transcript_1`           | First transcript                                        |
-| `transcript_2`           | Second transcript                                       |
-| `shared_reads`           | Reads in ECs containing both transcripts                |
-| `total_reads_tx1`        | Total reads compatible with transcript 1                |
-| `total_reads_tx2`        | Total reads compatible with transcript 2                |
-| `sharing_fraction`       | `shared / min(total_tx1, total_tx2)`                    |
-| `recommendation`         | `consider_merging` (≥0.9) or `ambiguous_quantification` |
+| Column | Description |
+|--------|-------------|
+| `sample_id` / `group_id` | Sample name or cell barcode |
+| `transcript_1` | First transcript |
+| `transcript_2` | Second transcript |
+| `shared_reads` | Reads in ECs containing both transcripts |
+| `total_reads_tx1` | Total reads compatible with transcript 1 |
+| `total_reads_tx2` | Total reads compatible with transcript 2 |
+| `sharing_fraction` | `shared / min(total_tx1, total_tx2)` |
+| `recommendation` | `consider_merging` (≥0.9) or `ambiguous_quantification` |
 
 **Control parameters** in `write_isoem()` / `write_sc_isoem()`:
 
@@ -389,22 +394,33 @@ These large ECs are simply excluded from pairwise sharing computation.
 
 ## Extracting Barcode/UMI from BAM
 
-IsoEM includes a shell script for extracting `read_id | barcode | umi`
-from minimap2-aligned BAM files:
+You can extract `read_id | barcode | umi` from minimap2-aligned BAM files
+using `samtools`:
 
 ```bash
 # Default tags: BC:Z (barcode), U8:Z (UMI)
-bash $(Rscript -e "cat(system.file('scripts',
-    'extract_barcodes_from_bam.sh', package='IsoEM'))") \
-    -i aligned.bam \
-    -o read_bc_umi.tsv.gz \
-    -t 8 \
-    -f valid_barcodes.txt   # optional whitelist filter
+samtools view aligned.bam \
+  | awk -F'\t' '{
+      bc=""; umi="";
+      for(i=12;i<=NF;i++){
+        if($i ~ /^BC:Z:/) bc=substr($i,6);
+        if($i ~ /^U8:Z:/) umi=substr($i,6);
+      }
+      if(bc!="" && umi!="") print $1"\t"bc"\t"umi
+    }' \
+  | gzip > read_bc_umi.tsv.gz
 
-# Custom BAM tags (e.g. STARsolo output: CB:Z / UB:Z)
-bash extract_barcodes_from_bam.sh \
-    -i aligned.bam -o read_bc_umi.tsv.gz \
-    -b CB:Z -u UB:Z
+# Custom BAM tags (e.g. STARsolo / CellRanger: CB:Z / UB:Z)
+samtools view aligned.bam \
+  | awk -F'\t' '{
+      bc=""; umi="";
+      for(i=12;i<=NF;i++){
+        if($i ~ /^CB:Z:/) bc=substr($i,6);
+        if($i ~ /^UB:Z:/) umi=substr($i,6);
+      }
+      if(bc!="" && umi!="") print $1"\t"bc"\t"umi
+    }' \
+  | gzip > read_bc_umi.tsv.gz
 ```
 
 **Output format** (`read_bc_umi.tsv.gz`):
@@ -487,8 +503,8 @@ All examples work with built-in toy data:
 ```r
 library(IsoEM)
 
-counts_f <- system.file("extdata", "toy_counts.tsv",       package = "IsoEM")
-gtf_f    <- system.file("extdata", "toy.gtf",              package = "IsoEM")
+counts_f <- system.file("extdata", "toy_counts.tsv.gz",    package = "IsoEM")
+gtf_f    <- system.file("extdata", "toy.gtf.gz",           package = "IsoEM")
 bc_f     <- system.file("extdata", "toy_bc_umi.tsv",       package = "IsoEM")
 multi_f  <- system.file("extdata", "toy_counts_multi.tsv", package = "IsoEM")
 sid_f    <- system.file("extdata", "toy_sample_ids.tsv",   package = "IsoEM")
@@ -549,14 +565,14 @@ IsoEM was designed with **transposable element transcript quantification** in mi
 
 IsoEM handles very large files through several strategies:
 
-| Strategy         | Detail                                                                                  |
-| ---------------- | --------------------------------------------------------------------------------------- |
-| Lazy loading     | `prepare_isoem()` validates paths without reading data                                  |
-| Integer mapping  | Reads and transcripts integerised before EC construction                                |
+| Strategy | Detail |
+|----------|--------|
+| Lazy loading | `prepare_isoem()` validates paths without reading data |
+| Integer mapping | Reads and transcripts integerised before EC construction |
 | Chunk processing | `anno_file` / `counts_file` read in configurable chunks (`chunk_size`, default 5M rows) |
-| Early filtering  | `anno_file` records not in `counts_file` discarded immediately                          |
-| EC compression   | EM operates on the EC table (small), not raw reads (large)                              |
-| Temp cleanup     | Intermediate files deleted after EC construction by default (`keep_temp = FALSE`)       |
+| Early filtering | `anno_file` records not in `counts_file` discarded immediately |
+| EC compression | EM operates on the EC table (small), not raw reads (large) |
+| Temp cleanup | Intermediate files deleted after EC construction by default (`keep_temp = FALSE`) |
 
 **Typical memory usage** for a spatial transcriptomics sample
 (45M reads, 120M barcode records): **~4 GB peak** with default settings.
@@ -572,8 +588,51 @@ ec <- build_sc_ec(input, chunk_size = 1e6L, n_cores = 16)
 
 ## Changelog
 
-### v0.3.1
+### v0.3.5
 
+**Performance (2.8x overall speedup on spatial long-read data):**
+
+- **Anno file I/O:** replaced `readLines`-based chunked reading with direct
+  `data.table::fread()`, leveraging parallel gzip decompression (5-10x faster).
+  Falls back to chunked reader automatically if direct read fails.
+- **Read filtering:** replaced `%in%` character set membership + named-vector
+  lookup with a single data.table keyed join for both filtering and integer
+  mapping in one pass.
+- **EM core:** vectorised with `rowsum()`. Unique ECs (typically 70-90% of all
+  ECs) are pre-computed once with no iteration. Multi-mapping ECs use flattened
+  parallel arrays instead of a per-EC R for-loop. ~15x faster per cell.
+- **EC construction:** integer `obs_id` (via `.GRP`) replaces string
+  `paste(group_id, umi)`. Single-mapping reads (majority) get a fast path
+  using `as.character(t_idx)` without `paste(collapse)`.
+- **Row estimation:** gzipped files use a file-size heuristic instead of
+  opening a slow gzip connection.
+- **Sharing table:** pre-allocated vectors for pairwise expansion; removed
+  redundant `sort()` in SC pooling (t_indices are already sorted).
+
+**Bug fixes:**
+
+- **Fix:** EC table and sharing table in bulk mode now use correct transcript
+  name mapping (previously reordered by `em_count`, producing wrong names)
+- **Fix:** `qc.tsv` now correctly includes `n_unique_ecs` and `n_multi_ecs`
+  columns (previously silently dropped due to field name mismatch)
+- **Fix:** `features.tsv` now uses `"Gene Expression"` as the third column
+  (feature_type) for proper Seurat `Read10X()` compatibility
+- **Fix:** GTF parser attribute extraction is now robust to lines missing
+  a `gene_id` attribute (previously could misalign values)
+- **Fix:** `is_novel` detection now matches on `transcript_id` only
+  (case-insensitive) instead of the full GTF line
+- Removed duplicate internal `.gzip_file` helper
+- Updated `NAMESPACE` to import actually-used `parallel` functions
+
+**Documentation:**
+
+- Fixed version numbers and toy data file names in all examples
+- Replaced reference to non-existent shell script with `samtools` commands
+- Added missing `total_reads`, `unique_reads`, `unique_read_frac` to
+  `cell_qc.tsv` documentation
+- Rewrote `IsoEM_scRNAseq_workflow` vignette to use built-in toy data
+
+### v0.3.1
 - **New:** `ec_table.tsv` output — all equivalence classes with transcript
   membership, count, size, and type (`unique`/`multi`)
 - **New:** `sharing_table.tsv` output — pairwise transcript sharing analysis
@@ -585,7 +644,6 @@ ec <- build_sc_ec(input, chunk_size = 1e6L, n_cores = 16)
 - Fully backward-compatible — existing code produces identical output by default
 
 ### v0.3.0
-
 - Initial public release
 
 ---
@@ -595,7 +653,7 @@ ec <- build_sc_ec(input, chunk_size = 1e6L, n_cores = 16)
 If you use IsoEM in your research, please cite:
 
 > hmutpw. *IsoEM: EM-based isoform quantification for IsoQuant long-read output.*  
-> GitHub: https://github.com/hmutpw/IsoEM (2025)
+> GitHub: https://github.com/hmutpw/IsoEM (2026)
 
 ---
 

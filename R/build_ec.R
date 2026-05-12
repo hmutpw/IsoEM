@@ -208,6 +208,9 @@ build_sc_ec <- function(input,
 # =============================================================================
 
 #' Read counts + build integer maps for read_id and transcript_id
+#'
+#' Uses match() for integer encoding — faster than named-vector lookup
+#' and avoids allocating a large named vector for read_map.
 #' @keywords internal
 #' @noRd
 .integerise_counts <- function(counts_file, verbose) {
@@ -225,24 +228,75 @@ build_sc_ec <- function(input,
 
   all_reads <- unique(dt$read_id)
   all_tx    <- sort(unique(dt$transcript_id))
-  read_map  <- stats::setNames(seq_along(all_reads), all_reads)
-  tx_map    <- stats::setNames(seq_along(all_tx),    all_tx)
 
-  dt[, r_idx := read_map[read_id]]
-  dt[, t_idx := tx_map[transcript_id]]
+  # match() builds an internal hash once — faster than named-vector [ lookup
+  dt[, r_idx := match(read_id, all_reads)]
+  dt[, t_idx := match(transcript_id, all_tx)]
   dt[, c("read_id", "transcript_id") := NULL]
   data.table::setkey(dt, r_idx)
+
+  # read_map: named vector kept for downstream group-from-anno/regex lookups
+  read_map <- stats::setNames(seq_along(all_reads), all_reads)
+  tx_map   <- stats::setNames(seq_along(all_tx),    all_tx)
 
   list(dt = dt, read_map = read_map, tx_map = tx_map)
 }
 
-#' Prepare group table from an external annotation file (in-memory chunked join)
+#' Prepare group table from an external annotation file
+#'
+#' Uses fread() directly for fast parallel gzip decompression (5-10x faster
+#' than readLines-based chunked reading). Falls back to chunked reading if
+#' direct read fails (e.g. malformed files, extreme memory pressure).
+#'
 #' sc:         anno_file cols = read_id | barcode | umi
 #' bulk_multi: anno_file cols = read_id | sample_id
 #' Returns data.table(r_idx, group_id [, umi])
 #' @keywords internal
 #' @noRd
 .group_from_anno <- function(anno_file, read_map, mode, chunk_size, verbose) {
+  is_sc    <- (mode == "sc")
+  n_select <- if (is_sc) 3L else 2L
+
+  # --- Fast path: direct fread (parallel gzip decompression) -----------------
+  if (verbose) message("  Reading anno_file ...")
+  dt <- tryCatch(
+    .read_tsv(anno_file, select = seq_len(n_select)),
+    error = function(e) NULL
+  )
+
+  if (is.null(dt) || nrow(dt) == 0L) {
+    # Fallback to chunked reading for problematic files
+    if (verbose)
+      message("  Direct read failed, falling back to chunked reading ...")
+    return(.group_from_anno_chunked(anno_file, read_map, mode,
+                                     chunk_size, verbose))
+  }
+
+  if (is_sc)
+    data.table::setnames(dt, seq_len(3L), c("read_id", "group_id", "umi"))
+  else
+    data.table::setnames(dt, seq_len(2L), c("read_id", "group_id"))
+
+  # Filter to reads present in counts — use keyed data.table join (fast)
+  read_dt <- data.table::data.table(
+    read_id = names(read_map),
+    r_idx   = unname(read_map)
+  )
+  data.table::setkey(read_dt, read_id)
+  data.table::setkey(dt, read_id)
+  dt <- read_dt[dt, on = "read_id", nomatch = NULL]
+  dt[, read_id := NULL]
+  rm(read_dt); gc(verbose = FALSE)
+
+  if (verbose) message(sprintf("  anno_file: %d matching records.", nrow(dt)))
+  dt
+}
+
+#' Fallback chunked reader for annotation files
+#' @keywords internal
+#' @noRd
+.group_from_anno_chunked <- function(anno_file, read_map, mode,
+                                      chunk_size, verbose) {
   valid_reads <- names(read_map)
   is_sc       <- (mode == "sc")
   n_select    <- if (is_sc) 3L else 2L
@@ -340,7 +394,11 @@ build_sc_ec <- function(input,
 }
 
 #' Core EC construction from integer tables
-#' Fully vectorised data.table operations; parallel across groups.
+#'
+#' Optimised for memory and speed:
+#' - Uses integer obs_id instead of string obs_key (avoids large string alloc)
+#' - Fast path for single-mapping observations (no paste, just as.character)
+#' - Strategic rm() + gc() to free intermediates
 #' @keywords internal
 #' @noRd
 .build_ec_from_ints <- function(dt_counts, dt_group, tx_map,
@@ -365,46 +423,62 @@ build_sc_ec <- function(input,
     if (verbose)
       message(sprintf("  UMI dedup: %d -> %d records.",
                       n_before, nrow(dt_full)))
-    # obs_key = unique observation unit per cell
-    dt_full[, obs_key := paste(group_id, umi, sep = "__")]
+    # Integer obs_id (avoids large paste(group_id, umi) string allocation)
+    dt_full[, obs_id := .GRP, by = .(group_id, umi)]
   } else {
-    dt_full[, obs_key := as.character(r_idx)]
+    dt_full[, obs_id := r_idx]
   }
 
   all_groups <- unique(dt_full$group_id)
   if (verbose)
     message(sprintf("  Building ECs for %d groups ...", length(all_groups)))
 
-  # ---- Vectorised EC construction (no per-group loop) ----------------------
+  # ---- Vectorised EC construction ------------------------------------------
   # A: sort t_idx within obs so paste order is canonical
-  data.table::setorder(dt_full, group_id, obs_key, t_idx)
+  data.table::setorder(dt_full, group_id, obs_id, t_idx)
 
-  # B: EC key per (group_id, obs_key) -- one vectorised groupby
-  obs_ec <- dt_full[,
-    .(ec_key = paste(t_idx, collapse = "|")),
-    by = .(group_id, obs_key)
-  ]
+  # B: count transcripts per observation (for fast path below)
+  obs_n <- dt_full[, .N, by = .(group_id, obs_id)]
 
-  # C: global ec_id per (group_id, ec_key)
+  # C: fast path — single-mapping observations (majority)
+  #    EC key is just as.character(t_idx), no paste needed.
+  single <- obs_n[N == 1L, .(group_id, obs_id)]
+  single_ec <- dt_full[single, on = .(group_id, obs_id), nomatch = NULL
+    ][, .(group_id, obs_id, ec_key = as.character(t_idx))]
+
+  # D: multi-mapping observations — need paste(collapse)
+  multi <- obs_n[N > 1L, .(group_id, obs_id)]
+  if (nrow(multi) > 0L) {
+    multi_ec <- dt_full[multi, on = .(group_id, obs_id), nomatch = NULL
+      ][, .(ec_key = paste(t_idx, collapse = "|")), by = .(group_id, obs_id)]
+    obs_ec <- data.table::rbindlist(list(single_ec, multi_ec), use.names = TRUE)
+    rm(multi_ec)
+  } else {
+    obs_ec <- single_ec
+  }
+  rm(dt_full, single_ec, single, multi, obs_n); gc(verbose = FALSE)
+
+  # E: assign EC id per (group_id, ec_key)
   obs_ec[, ec_id := .GRP, by = .(group_id, ec_key)]
 
-  # D: EC count = number of observations per EC
+  # F: EC count = number of observations per EC
   ec_counts <- obs_ec[, .(count = .N), by = .(group_id, ec_id, ec_key)]
+  rm(obs_ec); gc(verbose = FALSE)
 
-  # E: t_indices -- parse ec_key string (avoids re-joining dt_full)
+  # G: t_indices — parse ec_key string
   unique_ecs <- unique(ec_counts[, .(group_id, ec_id, ec_key)])
   unique_ecs[, t_indices := lapply(
     strsplit(ec_key, "|", fixed = TRUE), as.integer
   )]
 
-  # F: assemble final EC table
+  # H: assemble final EC table
   ec_table <- ec_counts[
     unique_ecs[, .(group_id, ec_id, t_indices)],
     on = c("group_id", "ec_id")
   ]
-  data.table::setkey(ec_table, group_id)  # pre-key for fast run_em lookups
+  data.table::setkey(ec_table, group_id)
 
-  rm(dt_full, obs_ec, ec_counts, unique_ecs); gc(verbose = FALSE)
+  rm(ec_counts, unique_ecs); gc(verbose = FALSE)
 
   if (verbose)
     message(sprintf("  EC table: %d rows, %d unique ECs total.",
